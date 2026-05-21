@@ -9,4 +9,5 @@ pub mod service_plan;
 pub mod session;
 pub mod songs;
 pub mod stt;
+pub mod summarize;
 pub mod themes;

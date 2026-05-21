@@ -137,6 +137,17 @@ export function useServicePlan() {
     [activeSessionId],
   )
 
+  const renameTemplate = useCallback(
+    (id: number, name: string) =>
+      invoke("plan_rename_template", { id, name }),
+    [],
+  )
+
+  const deleteTemplate = useCallback(
+    (id: number) => invoke("plan_delete_template", { id }),
+    [],
+  )
+
   return {
     plan: store.plan,
     activeItemId: store.activeItemId,
@@ -150,5 +161,7 @@ export function useServicePlan() {
     loadTemplate,
     saveAsTemplate,
     cloneFromSession,
+    renameTemplate,
+    deleteTemplate,
   }
 }

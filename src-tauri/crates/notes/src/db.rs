@@ -4,8 +4,9 @@ use rusqlite::{params, Connection, Row};
 
 use crate::error::{Result, SessionError};
 use crate::models::{
-    AddDetectionRequest, AddNoteRequest, AddTranscriptRequest, CreateSessionRequest,
-    PlannedScripture, SermonSession, SessionDetection, SessionNote, SessionStatus,
+    AddDetectionRequest, AddDistributionRequest, AddNoteRequest, AddTranscriptRequest,
+    CreateSessionRequest, PlannedScripture, SermonSession, SessionDetection, SessionDistribution,
+    SessionNote, SessionStatus,
     SessionTranscriptSegment,
 };
 
@@ -411,6 +412,72 @@ impl SessionDb {
         Ok(notes)
     }
 
+    // ── Distributions ───────────────────────────────────────────────
+
+    /// Record a distribution attempt. Status starts as `pending`; advance it
+    /// later with `mark_distribution_sent` / `mark_distribution_failed`.
+    pub fn add_distribution(
+        &self,
+        req: &AddDistributionRequest,
+    ) -> Result<SessionDistribution> {
+        self.conn.execute(
+            "INSERT INTO session_distributions (session_id, channel, recipient) \
+             VALUES (?1, ?2, ?3)",
+            params![req.session_id, req.channel, req.recipient],
+        )?;
+
+        let id = self.conn.last_insert_rowid();
+        self.conn
+            .query_row(
+                "SELECT id, session_id, channel, recipient, sent_at, status \
+                 FROM session_distributions WHERE id = ?1",
+                params![id],
+                row_to_distribution,
+            )
+            .map_err(Into::into)
+    }
+
+    /// List distributions for a session, newest first.
+    pub fn list_distributions(&self, session_id: i64) -> Result<Vec<SessionDistribution>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, session_id, channel, recipient, sent_at, status \
+             FROM session_distributions WHERE session_id = ?1 ORDER BY id DESC",
+        )?;
+        let rows = stmt.query_map(params![session_id], row_to_distribution)?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
+    /// Mark distribution as sent and stamp `sent_at = now`.
+    pub fn mark_distribution_sent(&self, id: i64) -> Result<()> {
+        self.conn.execute(
+            "UPDATE session_distributions \
+             SET status = 'sent', sent_at = datetime('now') WHERE id = ?1",
+            params![id],
+        )?;
+        Ok(())
+    }
+
+    /// Mark distribution as failed; preserve sent_at for re-try diagnostics.
+    pub fn mark_distribution_failed(&self, id: i64) -> Result<()> {
+        self.conn.execute(
+            "UPDATE session_distributions SET status = 'failed' WHERE id = ?1",
+            params![id],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_distribution(&self, id: i64) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM session_distributions WHERE id = ?1",
+            params![id],
+        )?;
+        Ok(())
+    }
+
     // ── Themes ────────────────────────────────────────────────
 
     pub fn list_custom_themes(&self) -> Result<Vec<(String, String, String)>> {
@@ -746,5 +813,16 @@ fn row_to_note(row: &Row<'_>) -> rusqlite::Result<SessionNote> {
         note_type: row.get(2)?,
         content: row.get(3)?,
         created_at: row.get(4)?,
+    })
+}
+
+fn row_to_distribution(row: &Row<'_>) -> rusqlite::Result<SessionDistribution> {
+    Ok(SessionDistribution {
+        id: row.get(0)?,
+        session_id: row.get(1)?,
+        channel: row.get(2)?,
+        recipient: row.get(3)?,
+        sent_at: row.get(4)?,
+        status: row.get(5)?,
     })
 }

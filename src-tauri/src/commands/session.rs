@@ -1,6 +1,7 @@
 use rhema_notes::{
-    AddDetectionRequest, AddNoteRequest, AddTranscriptRequest, CreateSessionRequest, SermonSession,
-    SessionDb, SessionDetection, SessionNote, SessionTranscriptSegment,
+    AddDetectionRequest, AddDistributionRequest, AddNoteRequest, AddTranscriptRequest,
+    CreateSessionRequest, SermonSession, SessionDb, SessionDetection, SessionDistribution,
+    SessionNote, SessionTranscriptSegment,
 };
 use std::sync::Mutex;
 use tauri::State;
@@ -145,5 +146,51 @@ pub fn get_session_notes(
     db.lock()
         .map_err(|e| e.to_string())?
         .get_session_notes(session_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn add_distribution(
+    db: State<'_, DbState>,
+    request: AddDistributionRequest,
+) -> Result<SessionDistribution, String> {
+    db.lock()
+        .map_err(|e| e.to_string())?
+        .add_distribution(&request)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_distributions(
+    db: State<'_, DbState>,
+    session_id: i64,
+) -> Result<Vec<SessionDistribution>, String> {
+    db.lock()
+        .map_err(|e| e.to_string())?
+        .list_distributions(session_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn mark_distribution_sent(db: State<'_, DbState>, id: i64) -> Result<(), String> {
+    db.lock()
+        .map_err(|e| e.to_string())?
+        .mark_distribution_sent(id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn mark_distribution_failed(db: State<'_, DbState>, id: i64) -> Result<(), String> {
+    db.lock()
+        .map_err(|e| e.to_string())?
+        .mark_distribution_failed(id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_distribution(db: State<'_, DbState>, id: i64) -> Result<(), String> {
+    db.lock()
+        .map_err(|e| e.to_string())?
+        .delete_distribution(id)
         .map_err(|e| e.to_string())
 }

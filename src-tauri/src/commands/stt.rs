@@ -1116,3 +1116,56 @@ pub async fn verify_assemblyai_key(api_key: String) -> Result<VerifyResult, Stri
     })
 }
 
+/// Verify an Anthropic Claude API key by hitting GET /v1/models.
+/// No WebSocket layer — Claude is HTTP only.
+#[tauri::command]
+pub async fn verify_claude_key(api_key: String) -> Result<VerifyResult, String> {
+    if api_key.trim().is_empty() {
+        return Ok(VerifyResult {
+            ok: false,
+            http_ok: false,
+            ws_ok: true,
+            detail: "empty key".into(),
+        });
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(PROBE_TIMEOUT)
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .http1_only()
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client
+        .get("https://api.anthropic.com/v1/models")
+        .header("x-api-key", &api_key)
+        .header("anthropic-version", "2023-06-01")
+        .send()
+        .await
+        .map_err(|e| {
+            use std::error::Error;
+            let mut detail = format!("network: {e}");
+            let mut src: Option<&dyn Error> = Error::source(&e);
+            while let Some(s) = src {
+                detail.push_str(&format!(" → {s}"));
+                src = s.source();
+            }
+            detail
+        });
+
+    let (http_ok, detail) = match resp {
+        Ok(r) if r.status().is_success() => (true, "Claude key verified.".into()),
+        Ok(r) if r.status() == reqwest::StatusCode::UNAUTHORIZED => {
+            (false, "Invalid key (401)".into())
+        }
+        Ok(r) => (false, format!("Unexpected HTTP {}", r.status())),
+        Err(e) => (false, format!("HTTP probe failed: {e}")),
+    };
+
+    Ok(VerifyResult {
+        ok: http_ok,
+        http_ok,
+        ws_ok: true,
+        detail,
+    })
+}
+

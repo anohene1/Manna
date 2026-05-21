@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { invoke } from "@tauri-apps/api/core"
 import { emit, listen } from "@tauri-apps/api/event"
+import { toast } from "sonner"
 import { availableMonitors, getAllWindows, type Monitor } from '@tauri-apps/api/window'
 import {
   Dialog,
@@ -122,7 +123,7 @@ export function BroadcastSettings({
         fps: ndiFrameRateToNumber(frameRate),
         width: dims.width,
         height: dims.height,
-      }).catch(() => {})
+      }).catch((err) => console.warn(`[broadcast] emit ndi-config:${outputId} failed`, err))
     },
     [],
   )
@@ -236,7 +237,9 @@ export function BroadcastSettings({
         syncNdiConfigToOutput("main", false, ndiFrameRate, ndiResolution)
         setNdiActive(false)
         if (!isPreviewOpen) {
-          await invoke("close_broadcast_window", { outputId: "main" }).catch(() => {})
+          await invoke("close_broadcast_window", { outputId: "main" }).catch((err) =>
+            console.warn("[broadcast] close_broadcast_window main failed", err),
+          )
         }
       } else {
         await invoke("ensure_broadcast_window", { outputId: "main" })
@@ -254,14 +257,14 @@ export function BroadcastSettings({
           fps: session.fps,
           width: session.width,
           height: session.height,
-        }).catch(() => {})
+        }).catch((err) => console.warn("[broadcast] emit ndi-config:main failed", err))
         setTimeout(() => {
           useBroadcastStore.getState().syncBroadcastOutputFor("main")
           syncNdiConfigToOutput("main", true, ndiFrameRate, ndiResolution)
         }, 300)
       }
-    } catch {
-      // Command may not exist yet
+    } catch (error) {
+      toast.error(`NDI ${ndiActive ? "stop" : "start"} failed: ${error}`)
     }
   }
 
@@ -326,7 +329,9 @@ export function BroadcastSettings({
         syncNdiConfigToOutput("alt", false, altNdiFrameRate, altNdiResolution)
         setAltNdiActive(false)
         if (!altIsPreviewOpen) {
-          await invoke("close_broadcast_window", { outputId: "alt" }).catch(() => {})
+          await invoke("close_broadcast_window", { outputId: "alt" }).catch((err) =>
+            console.warn("[broadcast] close_broadcast_window alt failed", err),
+          )
         }
       } else {
         await invoke("ensure_broadcast_window", { outputId: "alt" })
@@ -344,14 +349,14 @@ export function BroadcastSettings({
           fps: session.fps,
           width: session.width,
           height: session.height,
-        }).catch(() => {})
+        }).catch((err) => console.warn("[broadcast] emit ndi-config:alt failed", err))
         setTimeout(() => {
           useBroadcastStore.getState().syncBroadcastOutputFor("alt")
           syncNdiConfigToOutput("alt", true, altNdiFrameRate, altNdiResolution)
         }, 300)
       }
     } catch (error) {
-      console.warn("Failed to toggle alt NDI", error)
+      toast.error(`Alt NDI ${altNdiActive ? "stop" : "start"} failed: ${error}`)
     }
   }
 
@@ -359,11 +364,15 @@ export function BroadcastSettings({
     setAltEnabled(enabled)
     if (!enabled) {
       if (altIsPreviewOpen) {
-        await invoke("close_broadcast_window", { outputId: "alt" }).catch(() => {})
+        await invoke("close_broadcast_window", { outputId: "alt" }).catch((err) =>
+          console.warn("[broadcast] close_broadcast_window alt failed", err),
+        )
         setAltIsPreviewOpen(false)
       }
       if (altNdiActive) {
-        await invoke("stop_ndi", { outputId: "alt" }).catch(() => {})
+        await invoke("stop_ndi", { outputId: "alt" }).catch((err) =>
+          console.warn("[broadcast] stop_ndi alt failed", err),
+        )
         syncNdiConfigToOutput("alt", false, altNdiFrameRate, altNdiResolution)
         setAltNdiActive(false)
       }

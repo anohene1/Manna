@@ -1,5 +1,7 @@
 // src/components/service-plan/template-manager.tsx
 import { useState, useEffect, useCallback } from "react"
+import { PencilIcon, TrashIcon, CheckIcon, XIcon } from "lucide-react"
+import { toast } from "sonner"
 import {
   Dialog,
   DialogContent,
@@ -18,9 +20,12 @@ interface Props {
 }
 
 export function TemplateManager({ open, onOpenChange }: Props) {
-  const { listTemplates, loadTemplate, saveAsTemplate } = useServicePlan()
+  const { listTemplates, loadTemplate, saveAsTemplate, renameTemplate, deleteTemplate } =
+    useServicePlan()
   const [templates, setTemplates] = useState<TemplateMeta[]>([])
   const [newName, setNewName] = useState("")
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editingName, setEditingName] = useState("")
 
   const refresh = useCallback(() => {
     listTemplates().then(setTemplates).catch((e) => console.warn("listTemplates failed:", e))
@@ -40,6 +45,43 @@ export function TemplateManager({ open, onOpenChange }: Props) {
   const load = async (id: number) => {
     await loadTemplate(id)
     onOpenChange(false)
+  }
+
+  const startRename = (t: TemplateMeta) => {
+    setEditingId(t.id)
+    setEditingName(t.name)
+  }
+
+  const cancelRename = () => {
+    setEditingId(null)
+    setEditingName("")
+  }
+
+  const commitRename = async () => {
+    if (editingId == null) return
+    const name = editingName.trim()
+    if (!name) {
+      cancelRename()
+      return
+    }
+    try {
+      await renameTemplate(editingId, name)
+      refresh()
+    } catch (e) {
+      toast.error(`Rename failed: ${e}`)
+    } finally {
+      cancelRename()
+    }
+  }
+
+  const remove = async (t: TemplateMeta) => {
+    if (!window.confirm(`Delete template "${t.name}"? This cannot be undone.`)) return
+    try {
+      await deleteTemplate(t.id)
+      refresh()
+    } catch (e) {
+      toast.error(`Delete failed: ${e}`)
+    }
   }
 
   return (
@@ -72,15 +114,54 @@ export function TemplateManager({ open, onOpenChange }: Props) {
             {templates.map((t) => (
               <div
                 key={t.id}
-                className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
+                className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm"
               >
-                <div>
-                  <div className="font-medium">{t.name}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {t.itemCount} item{t.itemCount === 1 ? "" : "s"}
-                  </div>
-                </div>
-                <Button size="sm" onClick={() => load(t.id)}>Load</Button>
+                {editingId === t.id ? (
+                  <>
+                    <Input
+                      autoFocus
+                      value={editingName}
+                      onChange={(e) => setEditingName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void commitRename()
+                        if (e.key === "Escape") cancelRename()
+                      }}
+                      className="h-7 text-xs"
+                    />
+                    <div className="flex shrink-0 gap-1">
+                      <Button size="icon-xs" variant="ghost" onClick={() => void commitRename()}>
+                        <CheckIcon className="size-3" />
+                      </Button>
+                      <Button size="icon-xs" variant="ghost" onClick={cancelRename}>
+                        <XIcon className="size-3" />
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium">{t.name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {t.itemCount} item{t.itemCount === 1 ? "" : "s"}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <Button size="icon-xs" variant="ghost" onClick={() => startRename(t)} title="Rename">
+                        <PencilIcon className="size-3" />
+                      </Button>
+                      <Button
+                        size="icon-xs"
+                        variant="ghost"
+                        onClick={() => void remove(t)}
+                        title="Delete"
+                        className="text-destructive"
+                      >
+                        <TrashIcon className="size-3" />
+                      </Button>
+                      <Button size="sm" onClick={() => load(t.id)}>Load</Button>
+                    </div>
+                  </>
+                )}
               </div>
             ))}
           </div>

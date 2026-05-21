@@ -146,3 +146,26 @@ pub struct AddTranscriptRequest {
     pub timestamp_ms: i64,
     pub speaker_label: Option<String>,
 }
+
+/// A record of one distribution attempt for a session summary
+/// (email, SMS, messaging app, etc.). Channel-agnostic — drivers
+/// for specific channels plug in elsewhere.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionDistribution {
+    pub id: i64,
+    pub session_id: i64,
+    pub channel: String,
+    pub recipient: String,
+    pub sent_at: Option<String>,
+    pub status: String,
+}
+
+/// Request payload for creating a new distribution record.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AddDistributionRequest {
+    pub session_id: i64,
+    pub channel: String,
+    pub recipient: String,
+}

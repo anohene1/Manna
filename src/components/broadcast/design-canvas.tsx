@@ -38,6 +38,8 @@ export function DesignCanvas() {
   const editingThemeId = useBroadcastStore((s) => s.editingThemeId)
   const selectedElement = useBroadcastStore((s) => s.selectedElement)
   const [zoomLevel, setZoomLevel] = useState(0)
+  const [gridVisible, setGridVisible] = useState(false)
+  const gridLinesRef = useRef<fabric.Line[]>([])
 
   const resyncLatestTheme = useCallback(() => {
     const latestTheme = latestThemeRef.current
@@ -260,6 +262,45 @@ export function DesignCanvas() {
     setZoomLevel(Math.round(newZoom * 100))
   }, [resyncLatestTheme])
 
+  const toggleGrid = useCallback(() => {
+    const canvas = fabricRef.current
+    if (!canvas) return
+    if (gridLinesRef.current.length > 0) {
+      gridLinesRef.current.forEach((line) => canvas.remove(line))
+      gridLinesRef.current = []
+      setGridVisible(false)
+      canvas.requestRenderAll()
+      return
+    }
+    const step = 60
+    const lines: fabric.Line[] = []
+    const opts = {
+      stroke: "rgba(255,255,255,0.08)",
+      strokeWidth: 1,
+      selectable: false,
+      evented: false,
+      excludeFromExport: true,
+    } as const
+    for (let x = step; x < WS_WIDTH; x += step) {
+      lines.push(new fabric.Line([x, 0, x, WS_HEIGHT], opts))
+    }
+    for (let y = step; y < WS_HEIGHT; y += step) {
+      lines.push(new fabric.Line([0, y, WS_WIDTH, y], opts))
+    }
+    lines.forEach((line) => canvas.add(line))
+    gridLinesRef.current = lines
+    setGridVisible(true)
+    canvas.requestRenderAll()
+  }, [])
+
+  const cycleSelection = useCallback(() => {
+    const next =
+      selectedElement === null ? "reference"
+        : selectedElement === "reference" ? "verse"
+          : null
+    useBroadcastStore.getState().setSelectedElement(next)
+  }, [selectedElement])
+
   const elementLabel =
     selectedElement === "verse" ? "verse"
       : selectedElement === "reference" ? "reference"
@@ -269,15 +310,33 @@ export function DesignCanvas() {
     <div className="flex h-full flex-col overflow-hidden">
       {/* Toolbar */}
       <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border/40 px-3" style={{ background: "#18181b" }}>
-        <Button variant="ghost" size="icon-xs" className="text-muted-foreground">
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={() => useBroadcastStore.getState().setSelectedElement(null)}
+          className={selectedElement === null ? "text-foreground" : "text-muted-foreground"}
+          title="Deselect"
+        >
           <MousePointer2Icon className="size-3.5" />
         </Button>
-        <div className="flex items-center gap-1.5 text-[0.625rem] text-muted-foreground">
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={toggleGrid}
+          className={`gap-1.5 text-[0.625rem] ${gridVisible ? "text-foreground" : "text-muted-foreground"}`}
+          title="Toggle grid"
+        >
           <Grid3X3Icon className="size-3" />
           <span>Grid</span>
-        </div>
+        </Button>
         <div className="flex-1" />
-        <Button variant="ghost" size="icon-xs" className="text-muted-foreground">
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={cycleSelection}
+          className="text-muted-foreground"
+          title="Cycle selection (verse/reference/none)"
+        >
           <SearchIcon className="size-3.5" />
         </Button>
         <span className="min-w-12 text-center text-[0.625rem] font-medium tabular-nums text-muted-foreground">

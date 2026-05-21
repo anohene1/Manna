@@ -1,6 +1,8 @@
 // src/components/panels/service-plan-panel.tsx
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect } from "react"
 import { CalendarDaysIcon, FolderIcon } from "lucide-react"
+import { DragDropProvider } from "@dnd-kit/react"
+import { useSortable, isSortable } from "@dnd-kit/react/sortable"
 import { useServicePlan } from "@/hooks/use-service-plan"
 import { useServicePlanStore } from "@/stores/service-plan-store"
 import { activatePlanItem } from "@/components/service-plan/activation-router"
@@ -16,7 +18,7 @@ export function ServicePlanPanel() {
   const [editing, setEditing] = useState<PlanItem | null>(null)
   const [templateManagerOpen, setTemplateManagerOpen] = useState(false)
 
-  /* Keyboard: ↑/↓ navigate, Enter activate, Del delete. */
+  /* Keyboard: ↑/↓ navigate, Enter activate, Cmd/Ctrl+↑/↓ reorder. */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!plan || plan.items.length === 0) return
@@ -24,7 +26,23 @@ export function ServicePlanPanel() {
       if (targets.includes((e.target as HTMLElement).tagName)) return
 
       const idx = plan.items.findIndex((i) => i.id === activeItemId)
-      if (e.key === "ArrowDown") {
+      const modifier = e.metaKey || e.ctrlKey
+
+      if (e.key === "ArrowDown" && modifier) {
+        if (idx < 0 || idx >= plan.items.length - 1) return
+        e.preventDefault()
+        const dragged = plan.items[idx]
+        const newPrev = plan.items[idx + 1] // dragged inserts AFTER the next item
+        const newNext = idx + 2 < plan.items.length ? plan.items[idx + 2] : null
+        void reorderItem(dragged, newPrev.id, newNext?.id ?? null)
+      } else if (e.key === "ArrowUp" && modifier) {
+        if (idx <= 0) return
+        e.preventDefault()
+        const dragged = plan.items[idx]
+        const newPrev = idx - 2 >= 0 ? plan.items[idx - 2] : null
+        const newNext = plan.items[idx - 1]
+        void reorderItem(dragged, newPrev?.id ?? null, newNext.id)
+      } else if (e.key === "ArrowDown") {
         e.preventDefault()
         const next = plan.items[Math.min(plan.items.length - 1, Math.max(0, idx + 1))]
         setActiveItem(next.id)
@@ -41,7 +59,7 @@ export function ServicePlanPanel() {
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [plan, activeItemId, setActiveItem])
+  }, [plan, activeItemId, setActiveItem, reorderItem])
 
   /* Auto-advance: when active item has autoAdvanceSeconds, schedule timer. */
   useEffect(() => {
@@ -65,17 +83,22 @@ export function ServicePlanPanel() {
     return () => store.cancelPendingAdvance()
   }, [plan, activeItemId])
 
-  /* Drag: simple prev/next swap. Use HTML5 drag for v1 (no @dnd-kit hookup)
-     to keep scope down. Future task can add keyboard-accessible drag. */
-  const onDragReorder = useCallback(
-    async (draggedId: number, prevId: number | null, nextId: number | null) => {
-      if (!plan) return
-      const dragged = plan.items.find((i) => i.id === draggedId)
-      if (!dragged) return
-      await reorderItem(dragged, prevId, nextId)
-    },
-    [plan, reorderItem],
-  )
+  const handleDragEnd = (event: { canceled: boolean; operation: { source: unknown } }) => {
+    if (event.canceled || !plan) return
+    const source = event.operation.source
+    if (!isSortable(source)) return
+    const { initialIndex, index } = source
+    if (initialIndex === index) return
+    const dragged = plan.items[initialIndex]
+    if (!dragged) return
+    // Compute neighbors in the new order
+    const reordered = [...plan.items]
+    const [removed] = reordered.splice(initialIndex, 1)
+    reordered.splice(index, 0, removed)
+    const prevId = index > 0 ? reordered[index - 1].id : null
+    const nextId = index < reordered.length - 1 ? reordered[index + 1].id : null
+    void reorderItem(dragged, prevId, nextId)
+  }
 
   if (!plan) {
     return (
@@ -106,25 +129,25 @@ export function ServicePlanPanel() {
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2">
-        {plan.items.length === 0 && (
-          <div className="px-3 py-4 text-center text-xs text-muted-foreground">
-            Empty plan. Click <span className="font-medium">Add</span> to insert items.
-          </div>
-        )}
-        {plan.items.map((item, idx) => (
-          <DraggableRow
-            key={item.id}
-            item={item}
-            isActive={activeItemId === item.id}
-            pendingAdvanceDeadline={pendingAdvanceDeadline}
-            onEdit={setEditing}
-            onDragReorder={onDragReorder}
-            prevId={idx > 0 ? plan.items[idx - 1].id : null}
-            nextId={idx < plan.items.length - 1 ? plan.items[idx + 1].id : null}
-          />
-        ))}
-      </div>
+      <DragDropProvider onDragEnd={handleDragEnd}>
+        <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2">
+          {plan.items.length === 0 && (
+            <div className="px-3 py-4 text-center text-xs text-muted-foreground">
+              Empty plan. Click <span className="font-medium">Add</span> to insert items.
+            </div>
+          )}
+          {plan.items.map((item, idx) => (
+            <SortableRow
+              key={item.id}
+              item={item}
+              index={idx}
+              isActive={activeItemId === item.id}
+              pendingAdvanceDeadline={pendingAdvanceDeadline}
+              onEdit={setEditing}
+            />
+          ))}
+        </div>
+      </DragDropProvider>
 
       <ServicePlanItemEditor item={editing} onClose={() => setEditing(null)} />
       <TemplateManager open={templateManagerOpen} onOpenChange={setTemplateManagerOpen} />
@@ -132,37 +155,18 @@ export function ServicePlanPanel() {
   )
 }
 
-interface RowProps {
+interface SortableRowProps {
   item: PlanItem
+  index: number
   isActive: boolean
   pendingAdvanceDeadline: number | null
   onEdit: (item: PlanItem) => void
-  onDragReorder: (draggedId: number, prevId: number | null, nextId: number | null) => void
-  prevId: number | null
-  nextId: number | null
 }
 
-function DraggableRow({ item, isActive, pendingAdvanceDeadline, onEdit, onDragReorder, prevId }: RowProps) {
+function SortableRow({ item, index, isActive, pendingAdvanceDeadline, onEdit }: SortableRowProps) {
+  const { ref, isDragging } = useSortable({ id: item.id, index })
   return (
-    <div
-      draggable
-      onDragStart={(e) => {
-        e.dataTransfer.setData("text/plain", String(item.id))
-        e.dataTransfer.effectAllowed = "move"
-      }}
-      onDragOver={(e) => {
-        e.preventDefault()
-        e.dataTransfer.dropEffect = "move"
-      }}
-      onDrop={(e) => {
-        e.preventDefault()
-        const draggedId = Number(e.dataTransfer.getData("text/plain"))
-        if (draggedId === item.id) return
-        // Dropping on `item` means dragged goes between `prevId` and `item.id`
-        // (i.e., dragged becomes the element whose next is `item`).
-        onDragReorder(draggedId, prevId, item.id)
-      }}
-    >
+    <div ref={ref} className={isDragging ? "opacity-50" : ""}>
       <ServicePlanItem
         item={item}
         isActive={isActive}

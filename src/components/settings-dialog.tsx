@@ -596,6 +596,7 @@ function ApiKeysSection() {
 
   const [claudeKeyValue, setClaudeKeyValue] = useState(claudeApiKey ?? "")
   const [claudeSaved, setClaudeSaved] = useState(false)
+  const [claudeVerify, setClaudeVerify] = useState<VerifyState>({ status: "idle" })
   const [geniusValue, setGeniusValue] = useState(geniusToken ?? "")
   const [geniusSaved, setGeniusSaved] = useState(false)
 
@@ -603,6 +604,27 @@ function ApiKeysSection() {
     persistClaudeApiKey(claudeKeyValue || null)
     setClaudeSaved(true)
     setTimeout(() => setClaudeSaved(false), 2000)
+  }
+
+  const handleTestClaudeKey = async () => {
+    if (!claudeKeyValue.trim()) {
+      setClaudeVerify({ status: "fail", detail: "Enter a key first." })
+      return
+    }
+    setClaudeVerify({ status: "testing" })
+    try {
+      const result = await invoke<VerifyResult>("verify_claude_key", {
+        apiKey: claudeKeyValue,
+      })
+      if (result.ok) {
+        setClaudeVerify({ status: "ok", detail: result.detail })
+        if (claudeKeyValue !== claudeApiKey) persistClaudeApiKey(claudeKeyValue)
+      } else {
+        setClaudeVerify({ status: "fail", detail: result.detail })
+      }
+    } catch (e) {
+      setClaudeVerify({ status: "fail", detail: String(e) })
+    }
   }
 
   const handleSaveGeniusToken = () => {
@@ -658,9 +680,20 @@ function ApiKeysSection() {
             type="password"
             placeholder="Enter your Claude API key..."
             value={claudeKeyValue}
-            onChange={(e) => setClaudeKeyValue(e.target.value)}
+            onChange={(e) => {
+              setClaudeKeyValue(e.target.value)
+              setClaudeVerify({ status: "idle" })
+            }}
             className="flex-1 text-xs"
           />
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleTestClaudeKey}
+            disabled={claudeVerify.status === "testing"}
+          >
+            {claudeVerify.status === "testing" ? "Testing…" : "Test"}
+          </Button>
           <Button size="sm" onClick={handleSaveClaudeKey}>
             {claudeSaved ? (
               <>
@@ -672,6 +705,12 @@ function ApiKeysSection() {
             )}
           </Button>
         </div>
+        {claudeVerify.status === "ok" && (
+          <p className="text-[0.625rem] text-emerald-500">{claudeVerify.detail}</p>
+        )}
+        {claudeVerify.status === "fail" && (
+          <p className="text-[0.625rem] text-destructive">{claudeVerify.detail}</p>
+        )}
         <p className="text-[0.625rem] text-muted-foreground">
           Used for AI sermon summaries. Get a key at{" "}
           <span className="text-primary">console.anthropic.com</span>
@@ -1214,12 +1253,20 @@ function HymnalsSection() {
     if (on && (counts[id] ?? 0) === 0) {
       setBusyId(id)
       try {
-        await invoke("seed_hymnal", { hymnalId: id })
+        const seededCount = await invoke<number>("seed_hymnal", { hymnalId: id })
         const { useSongStore } = await import("@/stores/song-store")
         await useSongStore.getState().hydrateSongs()
         await refreshCounts()
+        if (seededCount === 0) {
+          const { toast } = await import("sonner")
+          toast.warning(`${HYMNAL_NAMES[id as HymnalSource] ?? id} hymnal is empty`, {
+            description: "Seed data is not bundled yet for this hymnal.",
+          })
+        }
       } catch (e) {
         console.warn(`[hymnals] seed ${id} failed:`, e)
+        const { toast } = await import("sonner")
+        toast.error(`Failed to seed ${HYMNAL_NAMES[id as HymnalSource] ?? id}: ${e}`)
       } finally {
         setBusyId(null)
       }

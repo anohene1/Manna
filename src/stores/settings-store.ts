@@ -6,7 +6,6 @@ type SttProvider = "deepgram" | "whisper" | "assemblyai"
 interface SettingsState {
   deepgramApiKey: string | null
   assemblyAiApiKey: string | null
-  openaiApiKey: string | null
   claudeApiKey: string | null
   geniusToken: string | null
   activeTranslationId: number
@@ -21,7 +20,6 @@ interface SettingsState {
 
   setDeepgramApiKey: (key: string | null) => void
   setAssemblyAiApiKey: (key: string | null) => void
-  setOpenaiApiKey: (key: string | null) => void
   setClaudeApiKey: (key: string | null) => void
   setGeniusToken: (token: string | null) => void
   setActiveTranslationId: (id: number) => void
@@ -38,7 +36,6 @@ interface SettingsState {
 export const useSettingsStore = create<SettingsState>((set) => ({
   deepgramApiKey: null,
   assemblyAiApiKey: null,
-  openaiApiKey: null,
   claudeApiKey: null,
   geniusToken: null,
   activeTranslationId: 1,
@@ -53,7 +50,6 @@ export const useSettingsStore = create<SettingsState>((set) => ({
 
   setDeepgramApiKey: (deepgramApiKey) => set({ deepgramApiKey }),
   setAssemblyAiApiKey: (assemblyAiApiKey) => set({ assemblyAiApiKey }),
-  setOpenaiApiKey: (openaiApiKey) => set({ openaiApiKey }),
   setClaudeApiKey: (claudeApiKey) => set({ claudeApiKey }),
   setGeniusToken: (geniusToken) => set({ geniusToken }),
   setActiveTranslationId: (activeTranslationId) => set({ activeTranslationId }),
@@ -93,6 +89,7 @@ export async function hydrateSettings(): Promise<void> {
       audioDeviceId,
       autoMode,
       confidenceThreshold,
+      cooldownMs,
       enabledHymnals,
     ] = await Promise.all([
       store.get<string>("deepgramApiKey"),
@@ -105,6 +102,7 @@ export async function hydrateSettings(): Promise<void> {
       store.get<string>("audioDeviceId"),
       store.get<boolean>("autoMode"),
       store.get<number>("confidenceThreshold"),
+      store.get<number>("cooldownMs"),
       store.get<string[]>("enabledHymnals"),
     ])
 
@@ -119,6 +117,7 @@ export async function hydrateSettings(): Promise<void> {
     if (audioDeviceId) s.setAudioDeviceId(audioDeviceId)
     if (autoMode != null) s.setAutoMode(autoMode)
     if (confidenceThreshold != null) s.setConfidenceThreshold(confidenceThreshold)
+    if (cooldownMs != null) s.setCooldownMs(cooldownMs)
     if (Array.isArray(enabledHymnals) && enabledHymnals.length > 0) {
       s.setEnabledHymnals(enabledHymnals)
     }
@@ -258,6 +257,17 @@ export async function persistConfidenceThreshold(threshold: number): Promise<voi
     await store.set("confidenceThreshold", threshold)
   } catch {
     console.warn("[settings] Failed to persist confidence threshold")
+  }
+}
+
+/** Persist detection cooldown (ms) to disk. */
+export async function persistCooldownMs(ms: number): Promise<void> {
+  useSettingsStore.getState().setCooldownMs(ms)
+  try {
+    const store = await getStore()
+    await store.set("cooldownMs", ms)
+  } catch {
+    console.warn("[settings] Failed to persist cooldownMs")
   }
 }
 

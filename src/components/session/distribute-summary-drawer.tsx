@@ -11,6 +11,31 @@ import { useDistributeSummaryDrawerStore } from "@/lib/distribute-summary-drawer
 import { useSession } from "@/hooks/use-session"
 import { useSessionStore } from "@/stores"
 import { save } from "@tauri-apps/plugin-dialog"
+import { invoke } from "@tauri-apps/api/core"
+
+type SessionDistribution = {
+  id: number
+  sessionId: number
+  channel: string
+  recipient: string
+  sentAt: string | null
+  status: string
+}
+
+async function recordDistribution(
+  sessionId: number,
+  channel: string,
+  recipient: string,
+): Promise<void> {
+  try {
+    const row = await invoke<SessionDistribution>("add_distribution", {
+      request: { sessionId, channel, recipient },
+    })
+    await invoke("mark_distribution_sent", { id: row.id })
+  } catch (e) {
+    console.warn("[distribute] failed to record distribution", e)
+  }
+}
 
 function buildTemplate(session: {
   title: string
@@ -76,6 +101,7 @@ export function DistributeSummaryDrawer() {
     await navigator.clipboard.writeText(summaryText)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+    if (sessionId) void recordDistribution(sessionId, "clipboard", "system")
   }
 
   async function handleSaveFile() {
@@ -96,6 +122,7 @@ export function DistributeSummaryDrawer() {
       if (filePath) {
         const { writeTextFile } = await import("@tauri-apps/plugin-fs")
         await writeTextFile(filePath, summaryText)
+        if (sessionId) void recordDistribution(sessionId, "file", filePath)
         closeDistributeSummary()
       }
     } finally {

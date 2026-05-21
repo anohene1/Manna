@@ -344,7 +344,7 @@ impl ActiveNdiSession {
             yres: height as i32,
             fourcc: u32::from_le_bytes(*b"BGRA"),
             frame_rate_n: (self.info.fps * 1000) as i32,
-            frame_rate_d: 1001,
+            frame_rate_d: 1000,
             picture_aspect_ratio: (width as f32) / (height as f32),
             frame_format_type: 1, // NDIlib_frame_format_type_progressive
             timecode: i64::MAX, // NDIlib_send_timecode_synthesize
