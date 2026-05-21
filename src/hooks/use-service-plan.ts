@@ -152,6 +152,7 @@ export function useServicePlan() {
     plan: store.plan,
     activeItemId: store.activeItemId,
     pendingAdvanceDeadline: store.pendingAdvanceDeadline,
+    pendingAdvanceTotalMs: store.pendingAdvanceTotalMs,
     setActiveItem: store.setActiveItem,
     addItem,
     updateItem,

@@ -14,7 +14,8 @@ import { Button } from "@/components/ui/button"
 import type { PlanItem } from "@/types"
 
 export function ServicePlanPanel() {
-  const { plan, activeItemId, pendingAdvanceDeadline, setActiveItem, reorderItem } = useServicePlan()
+  const { plan, activeItemId, pendingAdvanceDeadline, pendingAdvanceTotalMs, setActiveItem, reorderItem } =
+    useServicePlan()
   const [editing, setEditing] = useState<PlanItem | null>(null)
   const [templateManagerOpen, setTemplateManagerOpen] = useState(false)
 
@@ -78,7 +79,7 @@ export function ServicePlanPanel() {
       useServicePlanStore.getState().setActiveItem(next.id)
       activatePlanItem(next)
     }, ms)
-    store.setPendingAdvance(timer, deadline)
+    store.setPendingAdvance(timer, deadline, ms)
 
     return () => store.cancelPendingAdvance()
   }, [plan, activeItemId])
@@ -143,6 +144,7 @@ export function ServicePlanPanel() {
               index={idx}
               isActive={activeItemId === item.id}
               pendingAdvanceDeadline={pendingAdvanceDeadline}
+              pendingAdvanceTotalMs={pendingAdvanceTotalMs}
               onEdit={setEditing}
             />
           ))}
@@ -160,10 +162,18 @@ interface SortableRowProps {
   index: number
   isActive: boolean
   pendingAdvanceDeadline: number | null
+  pendingAdvanceTotalMs: number | null
   onEdit: (item: PlanItem) => void
 }
 
-function SortableRow({ item, index, isActive, pendingAdvanceDeadline, onEdit }: SortableRowProps) {
+function SortableRow({
+  item,
+  index,
+  isActive,
+  pendingAdvanceDeadline,
+  pendingAdvanceTotalMs,
+  onEdit,
+}: SortableRowProps) {
   const { ref, isDragging } = useSortable({ id: item.id, index })
   return (
     <div ref={ref} className={isDragging ? "opacity-50" : ""}>
@@ -171,6 +181,7 @@ function SortableRow({ item, index, isActive, pendingAdvanceDeadline, onEdit }: 
         item={item}
         isActive={isActive}
         pendingAdvanceDeadline={pendingAdvanceDeadline}
+        pendingAdvanceTotalMs={pendingAdvanceTotalMs}
         onEdit={onEdit}
       />
     </div>

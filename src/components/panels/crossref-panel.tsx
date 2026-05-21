@@ -126,7 +126,6 @@ export function CrossRefPanel() {
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    console.log("[CrossRef] selectedVerse:", selectedVerse?.book_name, selectedVerse?.chapter, selectedVerse?.verse, "book_number:", selectedVerse?.book_number)
     if (!selectedVerse || selectedVerse.book_number <= 0) {
       setCrossRefs([])
       return

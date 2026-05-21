@@ -93,7 +93,6 @@ export function TranscriptPanel() {
     (data) => {
       useBibleStore.getState().setActiveTranslation(data.translation_id)
       retranslateBroadcastVerses(data.translation_id, data.abbreviation).catch(() => {})
-      console.log(`[VOICE] Translation switched to ${data.abbreviation}`)
     }
   )
 

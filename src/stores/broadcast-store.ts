@@ -107,12 +107,12 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
         id: theme.id,
         name: theme.name,
         themeJson: JSON.stringify(theme),
-      }).catch(() => {})
+      }).catch((err) => console.warn("[broadcast-store]", err))
     }
   },
   deleteTheme: (id) => {
     set((s) => ({ themes: s.themes.filter((t) => t.id !== id || t.builtin) }))
-    invoke("delete_custom_theme", { id }).catch(() => {})
+    invoke("delete_custom_theme", { id }).catch((err) => console.warn("[broadcast-store]", err))
   },
   duplicateTheme: (id) => {
     const s = get()
@@ -141,7 +141,7 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
     void emit(`broadcast:verse-update:${outputId}`, {
       theme,
       verse: s.liveVerse,
-    }).catch(() => {})
+    }).catch((err) => console.warn("[broadcast-store]", err))
   },
   syncBroadcastOutput: () => {
     get().syncBroadcastOutputFor("main")
@@ -169,12 +169,12 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
   },
   goLive: () => {
     // Always ensure broadcast window is open
-    invoke("ensure_broadcast_window", { outputId: "main" }).catch(() => {})
+    invoke("ensure_broadcast_window", { outputId: "main" }).catch((err) => console.warn("[broadcast-store]", err))
     invoke("list_monitors").then((monitors) => {
       const monitorList = monitors as Array<{ name: string; width: number; height: number }>
       const targetIdx = monitorList.length > 1 ? 1 : 0
-      invoke("open_broadcast_window", { outputId: "main", monitorIndex: targetIdx }).catch(() => {})
-    }).catch(() => {})
+      invoke("open_broadcast_window", { outputId: "main", monitorIndex: targetIdx }).catch((err) => console.warn("[broadcast-store]", err))
+    }).catch((err) => console.warn("[broadcast-store]", err))
 
     const { previewVerse } = get()
     if (previewVerse) {
@@ -185,7 +185,7 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
   clearScreen: () => {
     get().setLiveVerse(null)
     set({ isLive: false })
-    invoke("close_broadcast_window", { outputId: "main" }).catch(() => {})
+    invoke("close_broadcast_window", { outputId: "main" }).catch((err) => console.warn("[broadcast-store]", err))
   },
 
   // Designer
@@ -250,9 +250,9 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
   announcement: null,
   sendAnnouncement: (announcement) => {
     set({ announcement })
-    invoke("ensure_broadcast_window", { outputId: "main" }).catch(() => {})
-    void emit("broadcast:announcement:main", announcement).catch(() => {})
-    void emit("broadcast:announcement:alt", announcement).catch(() => {})
+    invoke("ensure_broadcast_window", { outputId: "main" }).catch((err) => console.warn("[broadcast-store]", err))
+    void emit("broadcast:announcement:main", announcement).catch((err) => console.warn("[broadcast-store]", err))
+    void emit("broadcast:announcement:alt", announcement).catch((err) => console.warn("[broadcast-store]", err))
     if (announcement.duration) {
       setTimeout(() => {
         const current = get().announcement
@@ -264,8 +264,8 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
   },
   dismissAnnouncement: () => {
     set({ announcement: null })
-    void emit("broadcast:announcement:main", null).catch(() => {})
-    void emit("broadcast:announcement:alt", null).catch(() => {})
+    void emit("broadcast:announcement:main", null).catch((err) => console.warn("[broadcast-store]", err))
+    void emit("broadcast:announcement:alt", null).catch((err) => console.warn("[broadcast-store]", err))
   },
 }))
 

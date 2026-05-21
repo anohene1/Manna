@@ -1,14 +1,17 @@
+import { useEffect, useState } from "react"
 import { GripVerticalIcon, Trash2Icon, PencilIcon, BookOpenIcon, MusicIcon, MegaphoneIcon, SquareIcon, MinusIcon } from "lucide-react"
 import type { PlanItem } from "@/types"
 import { parsePlanItem } from "@/types"
 import { Button } from "@/components/ui/button"
 import { useServicePlan } from "@/hooks/use-service-plan"
+import { useSongStore } from "@/stores"
 import { activatePlanItem } from "@/components/service-plan/activation-router"
 
 interface Props {
   item: PlanItem
   isActive: boolean
   pendingAdvanceDeadline: number | null
+  pendingAdvanceTotalMs?: number | null
   onEdit: (item: PlanItem) => void
   dragAttrs?: React.HTMLAttributes<HTMLDivElement>
   dragRef?: React.Ref<HTMLDivElement>
@@ -24,19 +27,30 @@ function iconFor(type: PlanItem["itemType"]) {
   }
 }
 
-function labelFor(item: PlanItem): string {
+function ItemLabel({ item }: { item: PlanItem }) {
   const parsed = parsePlanItem(item)
-  if (!parsed) return "(invalid)"
+  const songTitle = useSongStore((s) =>
+    parsed && parsed.type === "song" ? s.songs.find((x) => x.id === parsed.songId)?.title ?? null : null,
+  )
+  if (!parsed) return <>(invalid)</>
   switch (parsed.type) {
-    case "verse": return `${parsed.bookName} ${parsed.chapter}:${parsed.verse}`
-    case "song": return `Song ${parsed.songId}`
-    case "announcement": return parsed.title
-    case "section": return parsed.label
-    case "blank": return parsed.showLogo ? "Blank (logo)" : "Blank"
+    case "verse": return <>{`${parsed.bookName} ${parsed.chapter}:${parsed.verse}`}</>
+    case "song": return <>{songTitle ?? `Song ${parsed.songId}`}</>
+    case "announcement": return <>{parsed.title}</>
+    case "section": return <>{parsed.label}</>
+    case "blank": return <>{parsed.showLogo ? "Blank (logo)" : "Blank"}</>
   }
 }
 
-export function ServicePlanItem({ item, isActive, pendingAdvanceDeadline, onEdit, dragAttrs, dragRef }: Props) {
+export function ServicePlanItem({
+  item,
+  isActive,
+  pendingAdvanceDeadline,
+  pendingAdvanceTotalMs,
+  onEdit,
+  dragAttrs,
+  dragRef,
+}: Props) {
   const { setActiveItem, deleteItem } = useServicePlan()
   const editable = item.itemType === "announcement" || item.itemType === "section"
 
@@ -59,7 +73,7 @@ export function ServicePlanItem({ item, isActive, pendingAdvanceDeadline, onEdit
       <div className="flex size-5 shrink-0 items-center justify-center rounded bg-muted text-muted-foreground">
         {iconFor(item.itemType)}
       </div>
-      <div className="min-w-0 flex-1 truncate">{labelFor(item)}</div>
+      <div className="min-w-0 flex-1 truncate"><ItemLabel item={item} /></div>
       {isActive && <span className="text-[10px] font-medium text-red-500">Live</span>}
 
       {editable && (
@@ -87,24 +101,34 @@ export function ServicePlanItem({ item, isActive, pendingAdvanceDeadline, onEdit
         <Trash2Icon className="size-3" />
       </Button>
 
-      {isActive && pendingAdvanceDeadline != null && (
-        <AdvanceProgressBar deadline={pendingAdvanceDeadline} />
+      {isActive && pendingAdvanceDeadline != null && pendingAdvanceTotalMs != null && (
+        <AdvanceProgressBar
+          deadline={pendingAdvanceDeadline}
+          totalMs={pendingAdvanceTotalMs}
+        />
       )}
     </div>
   )
 }
 
-function AdvanceProgressBar({ deadline }: { deadline: number }) {
-  const now = Date.now()
-  const total = Math.max(1, deadline - (deadline - 1000))
+function AdvanceProgressBar({ deadline, totalMs }: { deadline: number; totalMs: number }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    let raf = 0
+    const tick = () => {
+      setNow(Date.now())
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [deadline])
+
   const remaining = Math.max(0, deadline - now)
-  const pct = Math.min(100, Math.max(0, ((total - remaining) / total) * 100))
+  const elapsed = Math.max(0, totalMs - remaining)
+  const pct = Math.min(100, Math.max(0, (elapsed / totalMs) * 100))
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 bg-red-500/20">
-      <div
-        className="h-full bg-red-500 transition-[width]"
-        style={{ width: `${pct}%` }}
-      />
+      <div className="h-full bg-red-500" style={{ width: `${pct}%` }} />
     </div>
   )
 }

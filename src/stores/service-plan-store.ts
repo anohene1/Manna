@@ -7,6 +7,7 @@ interface ServicePlanState {
   activeItemId: number | null
   pendingAdvanceTimerId: ReturnType<typeof setTimeout> | null
   pendingAdvanceDeadline: number | null
+  pendingAdvanceTotalMs: number | null
 
   setPlan: (plan: Plan | null) => void
   setActiveItem: (itemId: number | null) => void
@@ -23,7 +24,11 @@ interface ServicePlanState {
    */
   insertBetween: (prev: number | null, next: number | null) => number
 
-  setPendingAdvance: (timerId: ReturnType<typeof setTimeout> | null, deadlineMs: number | null) => void
+  setPendingAdvance: (
+    timerId: ReturnType<typeof setTimeout> | null,
+    deadlineMs: number | null,
+    totalMs?: number | null,
+  ) => void
   cancelPendingAdvance: () => void
 }
 
@@ -36,6 +41,7 @@ export const useServicePlanStore = create<ServicePlanState>((set, get) => ({
   activeItemId: null,
   pendingAdvanceTimerId: null,
   pendingAdvanceDeadline: null,
+  pendingAdvanceTotalMs: null,
 
   setPlan: (plan) => {
     const { pendingAdvanceTimerId } = get()
@@ -45,6 +51,7 @@ export const useServicePlanStore = create<ServicePlanState>((set, get) => ({
       activeItemId: null,
       pendingAdvanceTimerId: null,
       pendingAdvanceDeadline: null,
+      pendingAdvanceTotalMs: null,
     })
   },
 
@@ -91,12 +98,20 @@ export const useServicePlanStore = create<ServicePlanState>((set, get) => ({
     return 1
   },
 
-  setPendingAdvance: (timerId, deadlineMs) =>
-    set({ pendingAdvanceTimerId: timerId, pendingAdvanceDeadline: deadlineMs }),
+  setPendingAdvance: (timerId, deadlineMs, totalMs) =>
+    set({
+      pendingAdvanceTimerId: timerId,
+      pendingAdvanceDeadline: deadlineMs,
+      pendingAdvanceTotalMs: totalMs ?? null,
+    }),
 
   cancelPendingAdvance: () => {
     const { pendingAdvanceTimerId } = get()
     if (pendingAdvanceTimerId) clearTimeout(pendingAdvanceTimerId)
-    set({ pendingAdvanceTimerId: null, pendingAdvanceDeadline: null })
+    set({
+      pendingAdvanceTimerId: null,
+      pendingAdvanceDeadline: null,
+      pendingAdvanceTotalMs: null,
+    })
   },
 }))
