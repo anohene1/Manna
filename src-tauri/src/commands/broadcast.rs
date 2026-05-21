@@ -133,6 +133,38 @@ pub fn open_broadcast_window(
 }
 
 #[tauri::command]
+pub fn set_broadcast_fullscreen(
+    app: tauri::AppHandle,
+    output_id: String,
+    fullscreen: bool,
+) -> Result<(), String> {
+    let label = window_label(&output_id);
+    let window = app
+        .get_webview_window(label)
+        .ok_or_else(|| format!("Broadcast window '{output_id}' not open"))?;
+    window
+        .set_fullscreen(fullscreen)
+        .map_err(|e| e.to_string())?;
+    if fullscreen {
+        window.show().map_err(|e| e.to_string())?;
+        window.set_focus().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn is_broadcast_fullscreen(
+    app: tauri::AppHandle,
+    output_id: String,
+) -> Result<bool, String> {
+    let label = window_label(&output_id);
+    let window = app
+        .get_webview_window(label)
+        .ok_or_else(|| format!("Broadcast window '{output_id}' not open"))?;
+    window.is_fullscreen().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn close_broadcast_window(
     app: tauri::AppHandle,
     output_id: String,

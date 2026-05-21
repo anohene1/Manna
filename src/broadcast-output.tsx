@@ -288,9 +288,50 @@ function BroadcastCanvas() {
     return () => clearInterval(timer)
   }, [pushNdiFrame])
 
+  // Fullscreen: F / F11 toggles, Esc exits. Also double-click on canvas.
+  useEffect(() => {
+    const win = getCurrentWebviewWindow()
+    const toggle = async () => {
+      try {
+        const isFs = await win.isFullscreen()
+        await win.setFullscreen(!isFs)
+      } catch (e) {
+        console.warn("[broadcast] fullscreen toggle failed", e)
+      }
+    }
+    const exit = async () => {
+      try {
+        if (await win.isFullscreen()) await win.setFullscreen(false)
+      } catch (e) {
+        console.warn("[broadcast] fullscreen exit failed", e)
+      }
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "f" || e.key === "F" || e.key === "F11") {
+        e.preventDefault()
+        void toggle()
+      } else if (e.key === "Escape") {
+        void exit()
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [])
+
+  const handleDoubleClick = useCallback(async () => {
+    const win = getCurrentWebviewWindow()
+    try {
+      const isFs = await win.isFullscreen()
+      await win.setFullscreen(!isFs)
+    } catch (e) {
+      console.warn("[broadcast] fullscreen toggle failed", e)
+    }
+  }, [])
+
   return (
     <canvas
       ref={canvasRef}
+      onDoubleClick={handleDoubleClick}
       style={{
         width: "100vw",
         height: "100vh",

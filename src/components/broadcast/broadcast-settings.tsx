@@ -29,6 +29,7 @@ import {
   CastIcon,
   EyeIcon,
   EyeOffIcon,
+  MaximizeIcon,
   RefreshCwIcon,
   RadioIcon,
 } from "lucide-react"
@@ -521,25 +522,50 @@ export function BroadcastSettings({
                   </Select>
                 </div>
 
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full gap-1.5"
-                  disabled={monitors.length === 0}
-                  onClick={handleTogglePreview}
-                >
-                  {isPreviewOpen ? (
-                    <>
-                      <EyeOffIcon className="size-3.5" />
-                      Close Preview
-                    </>
-                  ) : (
-                    <>
-                      <EyeIcon className="size-3.5" />
-                      Open Preview
-                    </>
-                  )}
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 gap-1.5"
+                    disabled={monitors.length === 0}
+                    onClick={handleTogglePreview}
+                  >
+                    {isPreviewOpen ? (
+                      <>
+                        <EyeOffIcon className="size-3.5" />
+                        Close Preview
+                      </>
+                    ) : (
+                      <>
+                        <EyeIcon className="size-3.5" />
+                        Open Preview
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    disabled={!isPreviewOpen}
+                    onClick={async () => {
+                      try {
+                        const isFs = await invoke<boolean>("is_broadcast_fullscreen", {
+                          outputId: "main",
+                        })
+                        await invoke("set_broadcast_fullscreen", {
+                          outputId: "main",
+                          fullscreen: !isFs,
+                        })
+                      } catch (e) {
+                        toast.error(`Fullscreen toggle failed: ${e}`)
+                      }
+                    }}
+                    title="Toggle fullscreen on the preview window"
+                  >
+                    <MaximizeIcon className="size-3.5" />
+                    Fullscreen
+                  </Button>
+                </div>
               </div>
             ) : (
               <div className="space-y-3">
@@ -716,9 +742,29 @@ export function BroadcastSettings({
                     </SelectContent>
                   </Select>
                 </div>
-                <Button variant="outline" size="sm" className="w-full gap-1.5" disabled={monitors.length === 0} onClick={handleAltTogglePreview}>
-                  {altIsPreviewOpen ? (<><EyeOffIcon className="size-3.5" />Close Preview</>) : (<><EyeIcon className="size-3.5" />Open Preview</>)}
-                </Button>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" className="flex-1 gap-1.5" disabled={monitors.length === 0} onClick={handleAltTogglePreview}>
+                    {altIsPreviewOpen ? (<><EyeOffIcon className="size-3.5" />Close Preview</>) : (<><EyeIcon className="size-3.5" />Open Preview</>)}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    disabled={!altIsPreviewOpen}
+                    onClick={async () => {
+                      try {
+                        const isFs = await invoke<boolean>("is_broadcast_fullscreen", { outputId: "alt" })
+                        await invoke("set_broadcast_fullscreen", { outputId: "alt", fullscreen: !isFs })
+                      } catch (e) {
+                        toast.error(`Fullscreen toggle failed: ${e}`)
+                      }
+                    }}
+                    title="Toggle fullscreen on the alt preview window"
+                  >
+                    <MaximizeIcon className="size-3.5" />
+                    Fullscreen
+                  </Button>
+                </div>
               </div>
             ) : (
               <div className="space-y-3">

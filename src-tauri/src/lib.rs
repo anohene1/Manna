@@ -268,6 +268,8 @@ pub fn run() {
             commands::broadcast::ensure_broadcast_window,
             commands::broadcast::open_broadcast_window,
             commands::broadcast::close_broadcast_window,
+            commands::broadcast::set_broadcast_fullscreen,
+            commands::broadcast::is_broadcast_fullscreen,
             commands::broadcast::start_ndi,
             commands::broadcast::stop_ndi,
             commands::broadcast::get_ndi_status,
