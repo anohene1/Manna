@@ -67,6 +67,7 @@ function QueueItemCard({
   return (
     <div
       onClick={handlePreview}
+      onDoubleClick={handlePresent}
       className={cn(
         "group cursor-pointer rounded-lg px-2.5 py-2 transition-colors",
         isActive
@@ -86,12 +87,21 @@ function QueueItemCard({
           <span className={cn("text-[11px] font-semibold", isActive ? "text-primary-foreground" : "text-foreground")}>
             {item.reference}
           </span>
-          <p className={cn(
-            "line-clamp-1 font-serif text-[10px] leading-snug",
-            isActive ? "text-primary-foreground/70" : "text-muted-foreground"
-          )}>
-            {item.kind === "verse" ? item.verse.text : <span className="italic">Hymn stanza</span>}
-          </p>
+          {item.kind === "verse" ? (
+            <p className={cn(
+              "line-clamp-1 font-serif text-[10px] leading-snug",
+              isActive ? "text-primary-foreground/70" : "text-muted-foreground"
+            )}>
+              {item.verse.text}
+            </p>
+          ) : (
+            <p className={cn(
+              "whitespace-pre-line font-serif text-[13px] leading-relaxed",
+              isActive ? "text-primary-foreground/85" : "text-foreground/80"
+            )}>
+              {item.text}
+            </p>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-0.5">
           <Button
