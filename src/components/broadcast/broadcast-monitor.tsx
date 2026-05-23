@@ -292,7 +292,7 @@ export function BroadcastMonitor() {
         {/* Translation toggle — accordion */}
         <AccordionSection title="Translation" subtitle={translations.find(t => t.id === activeTranslationId)?.abbreviation}>
           <div className="flex flex-wrap gap-1.5">
-            {translations.filter((t) => t.abbreviation !== "AMP").slice(0, 7).map((t) => (
+            {translations.slice(0, 7).map((t) => (
               <button
                 key={t.id}
                 onClick={async () => {
