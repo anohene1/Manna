@@ -30,7 +30,15 @@ export function AddItemMenu() {
     setOpen(false)
   }
   const addBlank = async () => {
-    await addItem("blank", { type: "blank", showLogo: false })
+    await addItem("blank", { type: "blank", showLogo: true })
+    setOpen(false)
+  }
+  const addMomo = async () => {
+    await addItem("momo", { type: "momo" })
+    setOpen(false)
+  }
+  const addJesus = async () => {
+    await addItem("jesus", { type: "jesus" })
     setOpen(false)
   }
   const addVerse = () => {
@@ -55,6 +63,8 @@ export function AddItemMenu() {
           <DropdownMenuItem onClick={addSection}>Section header</DropdownMenuItem>
           <DropdownMenuItem onClick={addAnnouncement}>Announcement</DropdownMenuItem>
           <DropdownMenuItem onClick={addBlank}>Blank / logo</DropdownMenuItem>
+          <DropdownMenuItem onClick={addMomo}>MoMo</DropdownMenuItem>
+          <DropdownMenuItem onClick={addJesus}>Jesus</DropdownMenuItem>
           <DropdownMenuItem onClick={addVerse}>Verse…</DropdownMenuItem>
           <DropdownMenuItem onClick={addSong}>Song…</DropdownMenuItem>
         </DropdownMenuContent>

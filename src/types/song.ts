@@ -1,4 +1,4 @@
-export type SongSource = "ghs" | "mhb" | "sankey" | "sda" | "genius" | "custom"
+export type SongSource = "ghs" | "mhb" | "sankey" | "sda" | "genius" | "lrclib" | "custom"
 
 export type LineMode = "line" | "stanza-pair" | "stanza-full"
 
@@ -31,6 +31,21 @@ export interface GeniusHit {
   artist: string
   thumbnailUrl: string | null
 }
+
+export interface LrclibHit {
+  id: number
+  trackName: string
+  artistName: string
+  albumName: string | null
+  duration: number | null
+  instrumental: boolean
+  hasSynced: boolean
+  hasPlain: boolean
+}
+
+export type OnlineHit =
+  | { provider: "genius"; key: string; title: string; artist: string; hit: GeniusHit }
+  | { provider: "lrclib"; key: string; title: string; artist: string; hit: LrclibHit }
 
 export const GHS_SEED_VERSION = 1
 

@@ -6,7 +6,7 @@ export type {
 } from "./transcript"
 export type { Translation, Book, Verse, CrossReference } from "./bible"
 export type { QueueItem } from "./queue"
-export type { Song, SongStanza, SongSource, LineMode, GeniusHit, HymnalSource } from "./song"
+export type { Song, SongStanza, SongSource, LineMode, GeniusHit, LrclibHit, OnlineHit, HymnalSource } from "./song"
 export { GHS_SEED_VERSION, HYMNAL_SOURCES, HYMNAL_NAMES, HYMNAL_BADGES, isHymnalSource } from "./song"
 export type { DetectionResult, DetectionStatus } from "./detection"
 export type { BroadcastTheme, VerseRenderData, VerseSegment, RenderOptions } from "./broadcast"
@@ -28,7 +28,7 @@ export type {
 
 export type PlanKind = "template" | "session"
 
-export type PlanItemType = "verse" | "song" | "announcement" | "section" | "blank"
+export type PlanItemType = "verse" | "song" | "announcement" | "section" | "blank" | "momo" | "jesus"
 
 export interface TemplateMeta {
   id: number
@@ -74,12 +74,22 @@ export interface PlanItemBlank {
   showLogo: boolean
 }
 
+export interface PlanItemMomo {
+  type: "momo"
+}
+
+export interface PlanItemJesus {
+  type: "jesus"
+}
+
 export type PlanItemPayload =
   | PlanItemVerse
   | PlanItemSong
   | PlanItemAnnouncement
   | PlanItemSection
   | PlanItemBlank
+  | PlanItemMomo
+  | PlanItemJesus
 
 export interface PlanItem {
   id: number
@@ -121,6 +131,12 @@ export function parsePlanItem(item: PlanItem): PlanItemPayload | null {
     }
     if (type === "blank") {
       return { type: "blank", showLogo: Boolean(parsed.showLogo) }
+    }
+    if (type === "momo") {
+      return { type: "momo" }
+    }
+    if (type === "jesus") {
+      return { type: "jesus" }
     }
     return null
   } catch {

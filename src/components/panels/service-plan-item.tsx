@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { GripVerticalIcon, Trash2Icon, PencilIcon, BookOpenIcon, MusicIcon, MegaphoneIcon, SquareIcon, MinusIcon } from "lucide-react"
+import { GripVerticalIcon, Trash2Icon, PencilIcon, BookOpenIcon, MusicIcon, MegaphoneIcon, SquareIcon, MinusIcon, SmartphoneIcon, HeartIcon } from "lucide-react"
 import type { PlanItem } from "@/types"
 import { parsePlanItem } from "@/types"
 import { Button } from "@/components/ui/button"
@@ -24,6 +24,8 @@ function iconFor(type: PlanItem["itemType"]) {
     case "announcement": return <MegaphoneIcon className="size-3.5" />
     case "section": return <MinusIcon className="size-3.5" />
     case "blank": return <SquareIcon className="size-3.5" />
+    case "momo": return <SmartphoneIcon className="size-3.5" />
+    case "jesus": return <HeartIcon className="size-3.5" />
   }
 }
 
@@ -39,6 +41,8 @@ function ItemLabel({ item }: { item: PlanItem }) {
     case "announcement": return <>{parsed.title}</>
     case "section": return <>{parsed.label}</>
     case "blank": return <>{parsed.showLogo ? "Blank (logo)" : "Blank"}</>
+    case "momo": return <>MoMo</>
+    case "jesus": return <>Jesus</>
   }
 }
 

@@ -13,6 +13,10 @@ interface BroadcastState {
   isLive: boolean
   previewVerse: VerseRenderData | null
   liveVerse: VerseRenderData | null
+  blankLogo: boolean
+  setBlankLogo: (active: boolean) => void
+  fullscreenImage: { url: string; label: string } | null
+  setFullscreenImage: (img: { url: string; label: string } | null) => void
   history: Array<{ verse: VerseRenderData; presentedAt: number }>
 
   // Designer state
@@ -92,6 +96,26 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
   editingThemeId: null,
   draftTheme: null,
   selectedElement: null,
+  blankLogo: false,
+  setBlankLogo: (active) => {
+    set({
+      blankLogo: active,
+      fullscreenImage: active ? null : get().fullscreenImage,
+      liveVerse: active ? null : get().liveVerse,
+      isLive: active ? true : get().isLive,
+    })
+    get().syncBroadcastOutput()
+  },
+  fullscreenImage: null,
+  setFullscreenImage: (fullscreenImage) => {
+    set({
+      fullscreenImage,
+      blankLogo: fullscreenImage ? false : get().blankLogo,
+      liveVerse: fullscreenImage ? null : get().liveVerse,
+      isLive: fullscreenImage ? true : get().isLive,
+    })
+    get().syncBroadcastOutput()
+  },
 
   loadThemes: () => {
     set({ themes: [...BUILTIN_THEMES] })
@@ -141,6 +165,8 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
     void emit(`broadcast:verse-update:${outputId}`, {
       theme,
       verse: s.liveVerse,
+      blankLogo: s.blankLogo,
+      fullscreenImage: s.fullscreenImage,
     }).catch((err) => console.warn("[broadcast-store]", err))
   },
   syncBroadcastOutput: () => {
@@ -158,7 +184,7 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
   setLive: (isLive) => set({ isLive }),
   setPreviewVerse: (previewVerse) => set({ previewVerse }),
   setLiveVerse: (liveVerse) => {
-    set({ liveVerse, isLive: liveVerse !== null })
+    set({ liveVerse, isLive: liveVerse !== null, blankLogo: false, fullscreenImage: liveVerse ? null : get().fullscreenImage })
     if (liveVerse) get().addToHistory(liveVerse)
     get().syncBroadcastOutput()
   },
@@ -183,8 +209,8 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
     }
   },
   clearScreen: () => {
-    get().setLiveVerse(null)
-    set({ isLive: false })
+    set({ liveVerse: null, isLive: false, blankLogo: false, fullscreenImage: null })
+    get().syncBroadcastOutput()
     invoke("close_broadcast_window", { outputId: "main" }).catch((err) => console.warn("[broadcast-store]", err))
   },
 

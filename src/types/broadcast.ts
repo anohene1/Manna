@@ -66,7 +66,16 @@ export interface BroadcastTheme {
     shadow: { color: string; blur: number; x: number; y: number } | null
     outline: { color: string; width: number } | null
     lineBreakMode: "flow" | "centered-lines"
+    autoFit?: boolean
+    minFontSize?: number
   }
+  logo?: {
+    url: string
+    position: "top-left" | "top-right" | "bottom-left" | "bottom-right"
+    size: number
+    opacity: number
+    margin: number
+  } | null
   divider: {
     style: "none" | "line" | "dots"
     color: string
@@ -86,6 +95,10 @@ export interface BroadcastTheme {
     fontSize: number
     fontWeight: number
     color: string
+    standalone?: {
+      anchor: "top-left" | "top-right" | "bottom-left" | "bottom-right"
+      margin: number
+    } | null
     horizontalAlign?: TextHorizontalAlign
     verticalAlign?: TextVerticalAlign
     textTransform?: TextTransform

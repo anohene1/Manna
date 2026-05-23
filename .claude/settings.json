@@ -47,7 +47,21 @@
       "Bash(git -C /Users/uxderrick-mac/Development/Manna add src/stores/service-plan-store.test.ts src/components/panels/service-plan-panel.tsx)",
       "Bash(git -C /Users/uxderrick-mac/Development/Manna commit -m 'feat\\(plan\\): auto-advance timer wiring + 2 new store tests')",
       "Bash(echo \"---exit:$?\")",
-      "Bash(echo \"---EXIT: $?---\")"
+      "Bash(echo \"---EXIT: $?---\")",
+      "Bash(echo \"exit: $?\")",
+      "Bash(python3 -c \"import optimum; print\\(optimum.__version__\\)\")",
+      "Bash(cargo add *)",
+      "Bash(MANNA_FLAVOR=minimal cargo check)",
+      "Bash(python3 /Users/uxderrick-mac/Development/Manna/scripts/build-updater-manifest.py --help)",
+      "Bash(python3 -c \"import yaml; yaml.safe_load\\(open\\('/Users/uxderrick-mac/Development/Manna/.github/workflows/release.yml'\\)\\); print\\('yaml: ok'\\)\")",
+      "Bash(python3 -c \"import json, sys; import urllib.request; content = open\\('/Users/uxderrick-mac/Development/Manna/.github/workflows/release.yml'\\).read\\(\\); print\\(f'Lines: {len\\(content.splitlines\\(\\)\\)}'\\); print\\('bytes ok'\\)\")",
+      "Bash(git tag *)",
+      "Bash(command -v gh)",
+      "Bash(bun x *)",
+      "Bash(pkill -f \"tauri build\")",
+      "Bash(gh issue *)",
+      "WebFetch(domain:v2.tauri.app)",
+      "WebFetch(domain:discuss.pytorch.org)"
     ]
   },
   "enabledPlugins": {

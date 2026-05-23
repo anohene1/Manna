@@ -309,6 +309,8 @@ pub fn run() {
             commands::songs::delete_song,
             commands::songs::search_genius,
             commands::songs::fetch_genius_lyrics,
+            commands::songs::search_lrclib,
+            commands::songs::fetch_lrclib_lyrics,
             commands::hymnals::seed_hymnal,
             commands::hymnals::delete_hymnal_songs,
             commands::hymnals::list_hymnal_counts,

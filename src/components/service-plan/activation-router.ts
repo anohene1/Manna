@@ -1,5 +1,5 @@
 // src/components/service-plan/activation-router.ts
-import { useBroadcastStore, useBibleStore } from "@/stores"
+import { useBroadcastStore, useBibleStore, useQueueStore } from "@/stores"
 import { parsePlanItem } from "@/types"
 import type { PlanItem } from "@/types"
 
@@ -28,6 +28,7 @@ export function activatePlanItem(item: PlanItem): void {
 
     case "blank":
       broadcast.setLiveVerse(null)
+      broadcast.setBlankLogo(parsed.showLogo)
       return
 
     case "verse": {
@@ -50,11 +51,17 @@ export function activatePlanItem(item: PlanItem): void {
     }
 
     case "song": {
-      // Songs tab owns its own render pipeline. Emit a DOM event so a
-      // future integration point picks it up without coupling stores here.
-      window.dispatchEvent(
-        new CustomEvent("plan:activate-song", { detail: { songId: parsed.songId } }),
-      )
+      useQueueStore.getState().presentSongLive(parsed.songId)
+      return
+    }
+
+    case "momo": {
+      broadcast.setFullscreenImage({ url: "/MOMO111.png", label: "MoMo" })
+      return
+    }
+
+    case "jesus": {
+      broadcast.setFullscreenImage({ url: "/JESUSs.png", label: "Jesus" })
       return
     }
   }

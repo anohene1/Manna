@@ -51,7 +51,11 @@ function drawAnnouncement(
 interface BroadcastPayload {
   theme: BroadcastTheme
   verse: VerseRenderData | null
+  blankLogo?: boolean
+  fullscreenImage?: { url: string; label: string } | null
 }
+
+const BLANK_LOGO_URL = "/EWC-White.png"
 
 interface AnnouncementPayload {
   text: string
@@ -99,9 +103,45 @@ function BroadcastCanvas() {
       return
     }
 
-    const { theme, verse } = data
+    const { theme, verse, blankLogo, fullscreenImage } = data
     canvas.width = theme.resolution.width
     canvas.height = theme.resolution.height
+
+    if (fullscreenImage) {
+      ctx.fillStyle = "#000"
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      const img = imageCacheRef.current.get(fullscreenImage.url)
+      if (img && img.complete && img.naturalWidth > 0) {
+        const imgAspect = img.naturalWidth / img.naturalHeight
+        const canvasAspect = canvas.width / canvas.height
+        let w = canvas.width
+        let h = canvas.height
+        if (imgAspect > canvasAspect) {
+          h = canvas.width / imgAspect
+        } else {
+          w = canvas.height * imgAspect
+        }
+        ctx.drawImage(img, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h)
+      }
+      drawAnnouncement(ctx, canvas.width, canvas.height, announcementRef.current)
+      return
+    }
+
+    if (blankLogo) {
+      ctx.fillStyle = "#000"
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      const img = imageCacheRef.current.get(BLANK_LOGO_URL)
+      if (img && img.complete && img.naturalWidth > 0) {
+        const target = Math.min(canvas.width, canvas.height) * 0.99
+        const aspect = img.naturalWidth / img.naturalHeight
+        const logoW = aspect >= 1 ? target : target * aspect
+        const logoH = aspect >= 1 ? target / aspect : target
+        ctx.drawImage(img, (canvas.width - logoW) / 2, (canvas.height - logoH) / 2, logoW, logoH)
+      }
+      drawAnnouncement(ctx, canvas.width, canvas.height, announcementRef.current)
+      return
+    }
+
     const result = renderVerse(ctx, theme, verse, {
       scale: 1,
       imageCache: imageCacheRef.current,
@@ -115,25 +155,26 @@ function BroadcastCanvas() {
     drawAnnouncement(ctx, canvas.width, canvas.height, announcementRef.current)
   }, [logDebug])
 
-  const preloadBackgroundImage = useCallback((theme: BroadcastTheme) => {
-    const bg = theme.background
-    if (bg.type !== "image" || !bg.image?.url) return
-
-    const url = bg.image.url
+  const preloadImage = useCallback((url: string, label: string) => {
     const cache = imageCacheRef.current
     if (cache.has(url)) return
-
     const img = new Image()
     img.onload = () => {
       cache.set(url, img)
-      logDebug("Background image loaded", { url })
+      logDebug(`${label} loaded`, { url })
       draw()
     }
     img.onerror = () => {
-      console.warn("[broadcast-output] failed to load background image", { url })
+      console.warn(`[broadcast-output] failed to load ${label}`, { url })
     }
     img.src = url
   }, [draw, logDebug])
+
+  const preloadBackgroundImage = useCallback((theme: BroadcastTheme) => {
+    const bg = theme.background
+    if (bg.type === "image" && bg.image?.url) preloadImage(bg.image.url, "Background image")
+    if (theme.logo?.url) preloadImage(theme.logo.url, "Logo")
+  }, [preloadImage])
 
   const pushNdiFrame = useCallback(async () => {
     if (!ndiConfigRef.current.active) return
@@ -210,8 +251,11 @@ function BroadcastCanvas() {
     const unlisten = currentWindow.listen<BroadcastPayload>(`broadcast:verse-update:${OUTPUT_ID}`, (event) => {
       latestData.current = event.payload
       preloadBackgroundImage(event.payload.theme)
+      if (event.payload.blankLogo) preloadImage(BLANK_LOGO_URL, "Blank logo")
+      if (event.payload.fullscreenImage?.url) preloadImage(event.payload.fullscreenImage.url, "Fullscreen image")
       logDebug("Received broadcast:verse-update", {
         hasVerse: Boolean(event.payload.verse),
+        blankLogo: Boolean(event.payload.blankLogo),
         themeId: event.payload.theme.id,
       })
       draw()

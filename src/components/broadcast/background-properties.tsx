@@ -9,6 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
+import { Switch } from "@/components/ui/switch"
 
 function parseColorOpacity(color: string): { hex: string; opacity: number } {
   if (color.length === 9 && color.startsWith("#")) {
@@ -492,6 +493,130 @@ export function BackgroundProperties() {
 
       {/* Text Box - always visible */}
       <TextBoxSection />
+
+      {/* Logo */}
+      <LogoSection />
+    </div>
+  )
+}
+
+function LogoSection() {
+  const draftTheme = useBroadcastStore((s) => s.draftTheme)
+  const update = useBroadcastStore((s) => s.updateDraftNested)
+  if (!draftTheme) return null
+
+  const logo = draftTheme.logo
+
+  return (
+    <div className="flex flex-col gap-2 border-t border-border pt-3">
+      <div className="flex items-center justify-between">
+        <label className="text-xs font-bold text-foreground">Logo</label>
+        <Switch
+          checked={!!logo}
+          onCheckedChange={(checked) => {
+            if (checked) {
+              update("logo", {
+                url: "",
+                position: "top-right",
+                size: 120,
+                opacity: 1,
+                margin: 40,
+              })
+            } else {
+              update("logo", null)
+            }
+          }}
+        />
+      </div>
+
+      {logo && (
+        <div className="flex flex-col gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={() => {
+              const input = document.createElement("input")
+              input.type = "file"
+              input.accept = "image/*"
+              input.onchange = (e) => {
+                const file = (e.target as HTMLInputElement).files?.[0]
+                if (!file) return
+                const reader = new FileReader()
+                reader.onload = () => {
+                  update("logo.url", reader.result as string)
+                }
+                reader.readAsDataURL(file)
+              }
+              input.click()
+            }}
+          >
+            {logo.url ? "Change Logo" : "Pick Logo"}
+          </Button>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground">Position</label>
+            <Select
+              value={logo.position}
+              onValueChange={(v) => update("logo.position", v)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="top-left">Top Left</SelectItem>
+                <SelectItem value="top-right">Top Right</SelectItem>
+                <SelectItem value="bottom-left">Bottom Left</SelectItem>
+                <SelectItem value="bottom-right">Bottom Right</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium text-muted-foreground">Size</label>
+              <span className="text-xs tabular-nums text-muted-foreground">{logo.size}px</span>
+            </div>
+            <Slider
+              min={32}
+              max={400}
+              step={4}
+              value={[logo.size]}
+              onValueChange={([v]) => update("logo.size", v)}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium text-muted-foreground">Margin</label>
+              <span className="text-xs tabular-nums text-muted-foreground">{logo.margin}px</span>
+            </div>
+            <Slider
+              min={0}
+              max={200}
+              step={2}
+              value={[logo.margin]}
+              onValueChange={([v]) => update("logo.margin", v)}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium text-muted-foreground">Opacity</label>
+              <span className="text-xs tabular-nums text-muted-foreground">
+                {Math.round(logo.opacity * 100)}%
+              </span>
+            </div>
+            <Slider
+              min={0}
+              max={1}
+              step={0.05}
+              value={[logo.opacity]}
+              onValueChange={([v]) => update("logo.opacity", v)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

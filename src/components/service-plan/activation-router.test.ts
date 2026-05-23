@@ -5,17 +5,27 @@ import { activatePlanItem } from "./activation-router"
 import type { PlanItem } from "@/types"
 
 const setLiveVerse = vi.fn()
+const setBlankLogo = vi.fn()
+const setFullscreenImage = vi.fn()
+const presentSongLive = vi.fn()
 
 vi.mock("@/stores", () => ({
   useBroadcastStore: {
     getState: () => ({
       setLiveVerse,
+      setBlankLogo,
+      setFullscreenImage,
     }),
   },
   useBibleStore: {
     getState: () => ({
       activeTranslationId: 1,
       translations: [{ id: 1, abbreviation: "KJV" }],
+    }),
+  },
+  useQueueStore: {
+    getState: () => ({
+      presentSongLive,
     }),
   },
 }))
@@ -35,6 +45,9 @@ function mkItem(itemType: PlanItem["itemType"], data: unknown): PlanItem {
 describe("activation router", () => {
   beforeEach(() => {
     setLiveVerse.mockReset()
+    setBlankLogo.mockReset()
+    setFullscreenImage.mockReset()
+    presentSongLive.mockReset()
   })
 
   it("section items are no-op", () => {

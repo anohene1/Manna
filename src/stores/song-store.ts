@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core"
 import { create } from "zustand"
-import type { GeniusHit, LineMode, Song, SongSource } from "@/types"
+import type { GeniusHit, LineMode, LrclibHit, OnlineHit, Song, SongSource } from "@/types"
 
 interface SongRowRpc {
   id: string
@@ -73,6 +73,9 @@ interface SongStore {
   setLineMode: (id: string, mode: LineMode) => Promise<void>
   geniusSearch: (query: string) => Promise<GeniusHit[]>
   geniusImport: (hit: GeniusHit) => Promise<Song>
+  lrclibSearch: (query: string) => Promise<LrclibHit[]>
+  lrclibImport: (hit: LrclibHit) => Promise<Song>
+  onlineSearch: (query: string) => Promise<OnlineHit[]>
 }
 
 export const useSongStore = create<SongStore>((set, get) => ({
@@ -151,7 +154,141 @@ export const useSongStore = create<SongStore>((set, get) => ({
     await get().saveSong(song)
     return song
   },
+
+  lrclibSearch: async (query) => {
+    return invoke<LrclibHit[]>("search_lrclib", { query })
+  },
+
+  lrclibImport: async (hit) => {
+    const lyrics = await invoke<{ plainLyrics: string | null; syncedLyrics: string | null }>(
+      "fetch_lrclib_lyrics",
+      { id: hit.id },
+    )
+    const raw = lyrics.plainLyrics ?? (lyrics.syncedLyrics ? stripLrcTimestamps(lyrics.syncedLyrics) : null)
+    if (!raw || raw.trim().length === 0) {
+      throw new Error("LRCLIB returned no lyrics — paste manually.")
+    }
+    const { stanzas, chorus } = parsePlainLyrics(raw)
+    if (stanzas.length === 0 && !chorus) {
+      throw new Error("Could not parse LRCLIB lyrics — paste manually.")
+    }
+    const song: Song = {
+      id: `lrclib-${hit.id}`,
+      source: "lrclib",
+      number: null,
+      title: hit.trackName,
+      author: hit.artistName,
+      stanzas,
+      chorus,
+      autoChorus: Boolean(chorus),
+      lineMode: "stanza-full",
+      tune: null,
+      meter: null,
+      scriptureRef: null,
+      category: null,
+    }
+    await get().saveSong(song)
+    return song
+  },
+
+  onlineSearch: async (query) => {
+    const q = query.trim()
+    if (!q) return []
+    const [geniusRes, lrclibRes] = await Promise.allSettled([
+      get().geniusSearch(q),
+      get().lrclibSearch(q),
+    ])
+    const out: OnlineHit[] = []
+    if (geniusRes.status === "fulfilled") {
+      for (const hit of geniusRes.value) {
+        out.push({
+          provider: "genius",
+          key: dedupeKey(hit.title, hit.artist),
+          title: hit.title,
+          artist: hit.artist,
+          hit,
+        })
+      }
+    }
+    if (lrclibRes.status === "fulfilled") {
+      for (const hit of lrclibRes.value) {
+        out.push({
+          provider: "lrclib",
+          key: dedupeKey(hit.trackName, hit.artistName),
+          title: hit.trackName,
+          artist: hit.artistName,
+          hit,
+        })
+      }
+    }
+    return mergeOnlineHits(out)
+  },
 }))
+
+function dedupeKey(title: string, artist: string): string {
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "")
+  return `${norm(title)}|${norm(artist)}`
+}
+
+function mergeOnlineHits(hits: OnlineHit[]): OnlineHit[] {
+  const seen = new Map<string, OnlineHit>()
+  for (const h of hits) {
+    const existing = seen.get(h.key)
+    if (!existing) {
+      seen.set(h.key, h)
+      continue
+    }
+    // Prefer LRCLIB (free, has timing). Genius keeps slot only when LRCLIB absent.
+    if (existing.provider === "genius" && h.provider === "lrclib") {
+      seen.set(h.key, h)
+    }
+  }
+  return [...seen.values()]
+}
+
+function stripLrcTimestamps(synced: string): string {
+  return synced
+    .split("\n")
+    .map((line) => line.replace(/^\s*\[\d{1,2}:\d{2}(?:\.\d{1,3})?\]\s*/g, ""))
+    .join("\n")
+}
+
+function parsePlainLyrics(raw: string): ParsedLyrics {
+  // LRCLIB plain lyrics typically have no [Verse]/[Chorus] markers — split on
+  // blank lines into verses. If markers exist, reuse Genius parser.
+  if (/\[[^\]]+\]/.test(raw)) return parseGeniusLyrics(raw)
+
+  const blocks = raw
+    .split(/\n{2,}/)
+    .map((b) => b.trim())
+    .filter((b) => b.length > 0)
+
+  const stanzas: import("@/types").SongStanza[] = []
+  let chorus: import("@/types").SongStanza | null = null
+  let verseIdx = 0
+  const blockKey = (lines: string[]) => lines.join("\n").toLowerCase()
+  const counts = new Map<string, number>()
+  for (const block of blocks) {
+    const lines = block.split("\n").map((l) => l.trim()).filter(Boolean)
+    if (lines.length === 0) continue
+    counts.set(blockKey(lines), (counts.get(blockKey(lines)) ?? 0) + 1)
+  }
+  // Block that repeats verbatim 2+ times is treated as chorus.
+  for (const block of blocks) {
+    const lines = block.split("\n").map((l) => l.trim()).filter(Boolean)
+    if (lines.length === 0) continue
+    const key = blockKey(lines)
+    if (!chorus && (counts.get(key) ?? 0) >= 2) {
+      chorus = { id: "ch", kind: "chorus", lines }
+      continue
+    }
+    if (chorus && blockKey(chorus.lines) === key) continue
+    verseIdx += 1
+    stanzas.push({ id: `v${verseIdx}`, kind: "verse", lines })
+  }
+
+  return { stanzas, chorus }
+}
 
 // ── Genius lyrics parser ──────────────────────────────────────────────────
 //

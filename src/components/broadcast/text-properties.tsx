@@ -1,8 +1,9 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useBroadcastStore } from "@/stores/broadcast-store"
 import { Slider } from "@/components/ui/slider"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
+import { Button } from "@/components/ui/button"
 import {
   Select,
   SelectContent,
@@ -568,6 +569,34 @@ function VerseProperties() {
         </Select>
       </CollapsibleSection>
 
+      {/* Auto-Fit */}
+      <CollapsibleSection title="Auto-Fit Long Verses" defaultOpen={false}>
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-medium text-muted-foreground">Enabled</label>
+          <Switch
+            checked={draftTheme.verseText.autoFit ?? false}
+            onCheckedChange={(checked) => update("verseText.autoFit", checked)}
+          />
+        </div>
+        {draftTheme.verseText.autoFit && (
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium text-muted-foreground">Min Size</label>
+              <span className="text-xs tabular-nums text-muted-foreground">
+                {draftTheme.verseText.minFontSize ?? 24}px
+              </span>
+            </div>
+            <Slider
+              min={12}
+              max={80}
+              step={1}
+              value={[draftTheme.verseText.minFontSize ?? 24]}
+              onValueChange={([v]) => update("verseText.minFontSize", v)}
+            />
+          </div>
+        )}
+      </CollapsibleSection>
+
       {/* Divider */}
       <CollapsibleSection title="Divider" defaultOpen={false}>
         <Select
@@ -683,21 +712,40 @@ function VerseProperties() {
 
 export function TextProperties() {
   const selectedElement = useBroadcastStore((s) => s.selectedElement)
+  const draftTheme = useBroadcastStore((s) => s.draftTheme)
 
-  if (selectedElement === "reference") {
-    return <ReferenceProperties />
-  }
+  useEffect(() => {
+    if (draftTheme && selectedElement === null) {
+      useBroadcastStore.getState().setSelectedElement("verse")
+    }
+  }, [draftTheme, selectedElement])
 
-  if (selectedElement === "verse") {
-    return <VerseProperties />
-  }
+  const setSelected = (el: "verse" | "reference") =>
+    useBroadcastStore.getState().setSelectedElement(el)
+
+  const target = selectedElement ?? "verse"
 
   return (
-    <div className="flex flex-col items-center justify-center gap-2 py-8 text-center">
-      <p className="text-sm font-medium text-muted-foreground">No element selected</p>
-      <p className="text-xs text-muted-foreground">
-        Click on verse, reference, or translation text in the canvas to edit its properties
-      </p>
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-2 gap-1.5">
+        <Button
+          variant={target === "verse" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setSelected("verse")}
+          className="rounded-full"
+        >
+          Verse
+        </Button>
+        <Button
+          variant={target === "reference" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setSelected("reference")}
+          className="rounded-full"
+        >
+          Reference
+        </Button>
+      </div>
+      {target === "reference" ? <ReferenceProperties /> : <VerseProperties />}
     </div>
   )
 }

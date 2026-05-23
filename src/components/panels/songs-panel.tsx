@@ -8,11 +8,11 @@ import { searchSongs } from "@/lib/song-search"
 import { useQueueStore, useSongStore, useSettingsStore } from "@/stores"
 import type { Song } from "@/types"
 import { PasteLyricsDialog } from "@/components/songs/paste-lyrics-dialog"
-import { GeniusSearchResults } from "@/components/songs/genius-search-results"
+import { OnlineSearchResults } from "@/components/songs/online-search-results"
 import { SongDetailDrawer } from "@/components/songs/song-detail-drawer"
 import { SourceBadge } from "@/components/songs/source-badge"
 
-type Tab = "local" | "genius"
+type Tab = "local" | "online"
 
 export function SongsPanel() {
   const allSongs = useSongStore((s) => s.songs)
@@ -30,6 +30,7 @@ export function SongsPanel() {
         (s) =>
           s.source === "custom" ||
           s.source === "genius" ||
+          s.source === "lrclib" ||
           enabledHymnals.includes(s.source),
       ),
     [allSongs, enabledHymnals],
@@ -70,18 +71,18 @@ export function SongsPanel() {
         <button
           className={cn(
             "rounded px-2 py-1 transition-colors",
-            tab === "genius" ? "bg-muted font-semibold text-foreground" : "text-muted-foreground hover:bg-muted/50",
+            tab === "online" ? "bg-muted font-semibold text-foreground" : "text-muted-foreground hover:bg-muted/50",
           )}
-          onClick={() => setTab("genius")}
+          onClick={() => setTab("online")}
         >
-          Search Genius
+          Search Online
         </button>
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
         {tab === "local" ? (
           filtered.length === 0 ? (
-            <EmptyLocal onPaste={() => setPasteOpen(true)} onGenius={() => setTab("genius")} />
+            <EmptyLocal onPaste={() => setPasteOpen(true)} onOnline={() => setTab("online")} />
           ) : (
             <ul className="divide-y divide-border/40">
               {filtered.map((song) => (
@@ -96,7 +97,7 @@ export function SongsPanel() {
             </ul>
           )
         ) : (
-          <GeniusSearchResults query={query} />
+          <OnlineSearchResults query={query} />
         )}
       </div>
 
@@ -153,14 +154,14 @@ function SongRow({
   )
 }
 
-function EmptyLocal({ onPaste, onGenius }: { onPaste: () => void; onGenius: () => void }) {
+function EmptyLocal({ onPaste, onOnline }: { onPaste: () => void; onOnline: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 p-8 text-center text-xs text-muted-foreground">
       <MusicIcon className="size-8 text-muted-foreground/40" />
       <p>No matches. Try &quot;mhb 42&quot;, &quot;snk 150&quot;, or a hymn title.</p>
       <div className="flex gap-2">
-        <Button size="sm" variant="outline" onClick={onGenius}>
-          Search Genius
+        <Button size="sm" variant="outline" onClick={onOnline}>
+          Search Online
         </Button>
         <Button size="sm" variant="outline" onClick={onPaste}>
           Paste new hymn

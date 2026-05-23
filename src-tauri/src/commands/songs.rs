@@ -214,3 +214,131 @@ pub async fn fetch_genius_lyrics(url: String) -> Result<String, String> {
     }
     Ok(joined)
 }
+
+#[derive(Serialize, Deserialize)]
+pub struct LrclibHit {
+    pub id: i64,
+    #[serde(rename = "trackName")]
+    pub track_name: String,
+    #[serde(rename = "artistName")]
+    pub artist_name: String,
+    #[serde(rename = "albumName")]
+    pub album_name: Option<String>,
+    pub duration: Option<f64>,
+    pub instrumental: bool,
+    #[serde(rename = "hasSynced")]
+    pub has_synced: bool,
+    #[serde(rename = "hasPlain")]
+    pub has_plain: bool,
+}
+
+#[tauri::command]
+pub async fn search_lrclib(query: String) -> Result<Vec<LrclibHit>, String> {
+    if query.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .user_agent("Manna/1.0 (https://github.com/openbezal/rhema)")
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client
+        .get("https://lrclib.net/api/search")
+        .query(&[("q", &query)])
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {e}"))?;
+
+    match resp.status().as_u16() {
+        200 => {}
+        429 => return Err("LRCLIB rate limit hit. Retry shortly.".to_string()),
+        s => return Err(format!("LRCLIB returned HTTP {s}")),
+    }
+
+    let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let arr = json
+        .as_array()
+        .ok_or("Unexpected LRCLIB response shape")?;
+
+    let out: Vec<LrclibHit> = arr
+        .iter()
+        .filter_map(|r| {
+            let id = r.get("id")?.as_i64()?;
+            let track_name = r.get("trackName")?.as_str()?.to_string();
+            let artist_name = r.get("artistName")?.as_str()?.to_string();
+            let album_name = r
+                .get("albumName")
+                .and_then(|v| v.as_str())
+                .map(ToString::to_string);
+            let duration = r.get("duration").and_then(|v| v.as_f64());
+            let instrumental = r
+                .get("instrumental")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let has_synced = r
+                .get("syncedLyrics")
+                .map(|v| v.is_string() && !v.as_str().unwrap_or("").is_empty())
+                .unwrap_or(false);
+            let has_plain = r
+                .get("plainLyrics")
+                .map(|v| v.is_string() && !v.as_str().unwrap_or("").is_empty())
+                .unwrap_or(false);
+            Some(LrclibHit {
+                id,
+                track_name,
+                artist_name,
+                album_name,
+                duration,
+                instrumental,
+                has_synced,
+                has_plain,
+            })
+        })
+        .collect();
+
+    Ok(out)
+}
+
+#[derive(Serialize)]
+pub struct LrclibLyrics {
+    #[serde(rename = "plainLyrics")]
+    pub plain_lyrics: Option<String>,
+    #[serde(rename = "syncedLyrics")]
+    pub synced_lyrics: Option<String>,
+}
+
+#[tauri::command]
+pub async fn fetch_lrclib_lyrics(id: i64) -> Result<LrclibLyrics, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .user_agent("Manna/1.0 (https://github.com/openbezal/rhema)")
+        .build()
+        .map_err(|e| e.to_string())?;
+    let url = format!("https://lrclib.net/api/get/{id}");
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {e}"))?;
+
+    match resp.status().as_u16() {
+        200 => {}
+        404 => return Err("Lyrics not found on LRCLIB.".to_string()),
+        429 => return Err("LRCLIB rate limit hit. Retry shortly.".to_string()),
+        s => return Err(format!("LRCLIB returned HTTP {s}")),
+    }
+
+    let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    Ok(LrclibLyrics {
+        plain_lyrics: json
+            .get("plainLyrics")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(ToString::to_string),
+        synced_lyrics: json
+            .get("syncedLyrics")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(ToString::to_string),
+    })
+}

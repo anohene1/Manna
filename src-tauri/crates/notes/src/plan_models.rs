@@ -28,7 +28,7 @@ impl PlanKind {
     }
 }
 
-/// The five item types the plan supports in v1.
+/// Plan item variants. Extended over v1: momo + jesus are full-screen image cues.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PlanItemType {
@@ -37,6 +37,8 @@ pub enum PlanItemType {
     Announcement,
     Section,
     Blank,
+    Momo,
+    Jesus,
 }
 
 impl PlanItemType {
@@ -48,6 +50,8 @@ impl PlanItemType {
             Self::Announcement => "announcement",
             Self::Section => "section",
             Self::Blank => "blank",
+            Self::Momo => "momo",
+            Self::Jesus => "jesus",
         }
     }
 
@@ -59,6 +63,8 @@ impl PlanItemType {
             "announcement" => Some(Self::Announcement),
             "section" => Some(Self::Section),
             "blank" => Some(Self::Blank),
+            "momo" => Some(Self::Momo),
+            "jesus" => Some(Self::Jesus),
             _ => None,
         }
     }

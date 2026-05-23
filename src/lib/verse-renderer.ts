@@ -629,10 +629,29 @@ export function computeVerseLayoutMetrics(
   )
 
   const pad = layout.padding
-  const textRectX = pos.x + pad.left
-  const textRectY = pos.y + pad.top
-  const textRectW = textAreaW - pad.left - pad.right
-  const textRectH = textAreaH - pad.top - pad.bottom
+  let textRectX = pos.x + pad.left
+  let textRectY = pos.y + pad.top
+  let textRectW = textAreaW - pad.left - pad.right
+  let textRectH = textAreaH - pad.top - pad.bottom
+
+  // Reserve space taken by the logo so verse/reference don't overlap it.
+  // Mirror the reduction on the opposite side so a vertically-centered block
+  // remains visually centered on the canvas.
+  if (scaledTheme.logo?.url) {
+    const logo = scaledTheme.logo
+    const logoH = logo.size * scale
+    const logoMargin = logo.margin * scale
+    const reserve = logoH + logoMargin
+    if (logo.position === "top-left" || logo.position === "top-right") {
+      const shift = Math.max(0, reserve - pad.top)
+      textRectY += shift
+      textRectH = Math.max(0, textRectH - shift * 2)
+    } else if (logo.position === "bottom-left" || logo.position === "bottom-right") {
+      const shift = Math.max(0, reserve - pad.bottom)
+      textRectH = Math.max(0, textRectH - shift * 2)
+    }
+  }
+
   const textAreaRect: VerseLayoutRect = { x: pos.x, y: pos.y, width: textAreaW, height: textAreaH }
   const textRect: VerseLayoutRect = { x: textRectX, y: textRectY, width: textRectW, height: textRectH }
 
@@ -641,6 +660,7 @@ export function computeVerseLayoutMetrics(
   }
 
   const referenceHeight = scaledTheme.reference.fontSize * 1.5
+  const refStandalone = scaledTheme.reference.standalone
   const verseAlign = resolveHorizontalAlign(
     scaledTheme.verseText.horizontalAlign,
     scaledTheme.layout.textAlign,
@@ -652,14 +672,36 @@ export function computeVerseLayoutMetrics(
     false,
   )
   const blockVerticalAlign = resolveVerticalAlign(
-    scaledTheme.reference.position === "above"
-      ? (scaledTheme.reference.verticalAlign ?? scaledTheme.verseText.verticalAlign)
-      : (scaledTheme.verseText.verticalAlign ?? scaledTheme.reference.verticalAlign),
+    refStandalone
+      ? scaledTheme.verseText.verticalAlign
+      : scaledTheme.reference.position === "above"
+        ? (scaledTheme.reference.verticalAlign ?? scaledTheme.verseText.verticalAlign)
+        : (scaledTheme.verseText.verticalAlign ?? scaledTheme.reference.verticalAlign),
   )
   const referenceGap = Math.max(
     0,
     scaledTheme.layout.referenceGap ?? scaledTheme.reference.fontSize * 0.5,
   )
+  if (scaledTheme.verseText.autoFit) {
+    const minFs = Math.max(8, (scaledTheme.verseText.minFontSize ?? 24) * scale)
+    const refBlock =
+      scaledTheme.reference.position === "above"
+        ? referenceHeight + referenceGap
+        : scaledTheme.reference.position === "below"
+          ? referenceHeight + referenceGap
+          : referenceHeight
+    const availH = Math.max(0, textRectH - refBlock)
+    let fs = scaledTheme.verseText.fontSize
+    for (let i = 0; i < 24; i++) {
+      const m = measureVerseHeight(ctx, scaledTheme, verse, textRectW)
+      if (m.height <= availH && m.maxLineWidth <= textRectW) break
+      if (fs <= minFs) break
+      const next = Math.max(minFs, Math.floor(fs * 0.94))
+      if (next === fs) break
+      fs = next
+      scaledTheme.verseText = { ...scaledTheme.verseText, fontSize: fs }
+    }
+  }
   const verseMetrics = measureVerseHeight(ctx, scaledTheme, verse, textRectW)
   const verseHeight = verseMetrics.height
   const verseDrawX = alignX(verseAlign === "justify" ? "left" : verseAlign, textRectX, textRectW)
@@ -674,18 +716,45 @@ export function computeVerseLayoutMetrics(
   const referenceWidth = Math.max(1, Math.min(textRectW, ctx.measureText(refText).width))
   ctx.restore()
 
-  const blockHeight = scaledTheme.reference.position === "above"
-    ? referenceHeight + verseHeight
-    : scaledTheme.reference.position === "below"
-      ? verseHeight + referenceGap + referenceHeight
-      : verseHeight + referenceHeight
+  const blockHeight = refStandalone
+    ? verseHeight
+    : scaledTheme.reference.position === "above"
+      ? referenceHeight + referenceGap + verseHeight
+      : scaledTheme.reference.position === "below"
+        ? verseHeight + referenceGap + referenceHeight
+        : verseHeight + referenceHeight
   const blockStartY = alignY(blockVerticalAlign, textRectY, textRectH, blockHeight)
 
   let referenceRect: VerseLayoutRect
   let verseRect: VerseLayoutRect
+  if (refStandalone) {
+    const verseY = blockStartY
+    verseRect = rectForAlignedText(
+      verseAlign === "justify" ? "left" : verseAlign,
+      verseDrawX,
+      verseY,
+      verseMetrics.maxLineWidth,
+      verseHeight,
+      textRect,
+    )
+    const standaloneMargin = refStandalone.margin * scale
+    const refX = refStandalone.anchor.endsWith("right")
+      ? canvasW - standaloneMargin - referenceWidth
+      : standaloneMargin
+    const refY = refStandalone.anchor.startsWith("bottom")
+      ? canvasH - standaloneMargin - referenceHeight
+      : standaloneMargin
+    referenceRect = {
+      x: refX,
+      y: refY,
+      width: referenceWidth,
+      height: referenceHeight,
+    }
+    return { scaledTheme, textAreaRect, textRect, referenceRect, verseRect }
+  }
   if (scaledTheme.reference.position === "above") {
     const refY = blockStartY
-    const verseY = blockStartY + referenceHeight
+    const verseY = blockStartY + referenceHeight + referenceGap
     referenceRect = rectForAlignedText(
       referenceAlign === "justify" ? "left" : referenceAlign,
       referenceDrawX,
@@ -862,6 +931,7 @@ function renderVerseImpl(
 
   // If no verse data, just draw the background and text box
   if (!verse) {
+    drawLogo(ctx, scaledTheme, options?.scale ?? 1, options?.imageCache)
     ctx.restore()
     return metrics
   }
@@ -891,16 +961,59 @@ function renderVerseImpl(
     }
   }
   if (referenceRect) {
-    drawReference(
-      ctx,
-      scaledTheme,
-      verse.reference,
-      metrics.textRect.x,
-      metrics.textRect.width,
-      referenceRect.y + dividerOffset,
-    )
+    if (scaledTheme.reference.standalone) {
+      drawReference(
+        ctx,
+        scaledTheme,
+        verse.reference,
+        referenceRect.x,
+        referenceRect.width,
+        referenceRect.y,
+      )
+    } else {
+      drawReference(
+        ctx,
+        scaledTheme,
+        verse.reference,
+        metrics.textRect.x,
+        metrics.textRect.width,
+        referenceRect.y + dividerOffset,
+      )
+    }
   }
+
+  drawLogo(ctx, scaledTheme, scale, options?.imageCache)
 
   ctx.restore()
   return metrics
+}
+
+function drawLogo(
+  ctx: CanvasRenderingContext2D,
+  theme: BroadcastTheme,
+  scale: number,
+  imageCache?: Map<string, HTMLImageElement>,
+) {
+  const logo = theme.logo
+  if (!logo || !logo.url) return
+  const img = imageCache?.get(logo.url)
+  if (!img || !img.complete || img.naturalWidth === 0) return
+
+  const margin = logo.margin * scale
+  const aspect = img.naturalWidth / img.naturalHeight
+  const h = logo.size * scale
+  const w = h * aspect
+  const canvasW = theme.resolution.width
+  const canvasH = theme.resolution.height
+
+  let x = margin
+  let y = margin
+  if (logo.position === "top-right") { x = canvasW - w - margin; y = margin }
+  else if (logo.position === "bottom-left") { x = margin; y = canvasH - h - margin }
+  else if (logo.position === "bottom-right") { x = canvasW - w - margin; y = canvasH - h - margin }
+
+  ctx.save()
+  ctx.globalAlpha = (ctx.globalAlpha ?? 1) * logo.opacity
+  ctx.drawImage(img, x, y, w, h)
+  ctx.restore()
 }

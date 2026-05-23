@@ -108,6 +108,7 @@ export function DesignCanvas() {
       hasControls: false,
       hoverCursor: "default",
       shadow: new fabric.Shadow({ color: "rgba(0,0,0,0.4)", blur: 20 }),
+      objectCaching: false,
     })
     canvas.add(workspace)
     canvas.centerObject(workspace)
@@ -123,6 +124,10 @@ export function DesignCanvas() {
       width: 100,
       height: 40,
       fill: "rgba(0,0,0,0.001)",
+      stroke: "rgba(245, 158, 11, 0.4)",
+      strokeWidth: 1,
+      strokeDashArray: [4, 4],
+      strokeUniform: true,
       selectable: true,
       hasControls: false,
       hasBorders: true,
@@ -132,6 +137,7 @@ export function DesignCanvas() {
       lockMovementY: true,
       evented: true,
       objectCaching: false,
+      hoverCursor: "pointer",
     })
     canvas.add(refRegion)
     objectsRef.current.referenceRegion = refRegion
@@ -144,6 +150,10 @@ export function DesignCanvas() {
       width: 100,
       height: 200,
       fill: "rgba(0,0,0,0.001)",
+      stroke: "rgba(245, 158, 11, 0.4)",
+      strokeWidth: 1,
+      strokeDashArray: [4, 4],
+      strokeUniform: true,
       selectable: true,
       hasControls: false,
       hasBorders: true,
@@ -153,6 +163,7 @@ export function DesignCanvas() {
       lockMovementY: true,
       evented: true,
       objectCaching: false,
+      hoverCursor: "pointer",
     })
     canvas.add(verseRegion)
     objectsRef.current.verseRegion = verseRegion
@@ -237,8 +248,14 @@ export function DesignCanvas() {
     const refRegion = objectsRef.current.referenceRegion
     const verseRegion = objectsRef.current.verseRegion
     if (!refRegion || !verseRegion) return
-    refRegion.set({ strokeWidth: selectedElement === "reference" ? 1 : 0 })
-    verseRegion.set({ strokeWidth: selectedElement === "verse" ? 1 : 0 })
+    refRegion.set({
+      strokeWidth: selectedElement === "reference" ? 2 : 1,
+      stroke: selectedElement === "reference" ? "#f59e0b" : "rgba(245, 158, 11, 0.4)",
+    })
+    verseRegion.set({
+      strokeWidth: selectedElement === "verse" ? 2 : 1,
+      stroke: selectedElement === "verse" ? "#f59e0b" : "rgba(245, 158, 11, 0.4)",
+    })
     fabricRef.current?.requestRenderAll()
   }, [selectedElement])
 
@@ -412,6 +429,12 @@ async function syncThemeToCanvas(
       )
     }
   }
+  if (theme.logo?.url) {
+    const img = imageCache.get(theme.logo.url)
+    if (!img) {
+      ensureImage(theme.logo.url, imageCache, imageRequests, onImageReady)
+    }
+  }
 
   const { bitmap, metrics } = renderThemeBitmap(theme, imageCache)
   ws.set({
@@ -420,6 +443,7 @@ async function syncThemeToCanvas(
       repeat: "no-repeat",
     }),
   })
+  ws.dirty = true
 
   if (!metrics) return
   const referenceRect = metrics.referenceRect
@@ -458,12 +482,18 @@ async function syncThemeToCanvas(
   canvas.bringObjectToFront(refRegion)
 
   const selected = useBroadcastStore.getState().selectedElement
-  refRegion.set({ strokeWidth: selected === "reference" ? 1 : 0 })
-  verseRegion.set({ strokeWidth: selected === "verse" ? 1 : 0 })
+  refRegion.set({
+    strokeWidth: selected === "reference" ? 2 : 1,
+    stroke: selected === "reference" ? "#f59e0b" : "rgba(245, 158, 11, 0.4)",
+  })
+  verseRegion.set({
+    strokeWidth: selected === "verse" ? 2 : 1,
+    stroke: selected === "verse" ? "#f59e0b" : "rgba(245, 158, 11, 0.4)",
+  })
   refRegion.setCoords()
   verseRegion.setCoords()
 
-  canvas.requestRenderAll()
+  canvas.renderAll()
 }
 
 function mapLocalRectToWorkspaceRect(

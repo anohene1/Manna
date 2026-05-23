@@ -133,7 +133,7 @@ impl SessionDb {
                 plan_id                 INTEGER NOT NULL,
                 plan_kind               TEXT    NOT NULL CHECK (plan_kind IN ('template','session')),
                 order_index             REAL    NOT NULL,
-                item_type               TEXT    NOT NULL CHECK (item_type IN ('verse','song','announcement','section','blank')),
+                item_type               TEXT    NOT NULL CHECK (item_type IN ('verse','song','announcement','section','blank','momo','jesus')),
                 item_data               TEXT    NOT NULL,
                 auto_advance_seconds    INTEGER
             );
@@ -161,6 +161,50 @@ impl SessionDb {
         self.conn.execute_batch(
             "CREATE INDEX IF NOT EXISTS idx_songs_scripture ON songs(scripture_ref);",
         )?;
+
+        // Widen service_plan_items.item_type CHECK to include momo/jesus.
+        // SQLite cannot ALTER a CHECK constraint, so rebuild the table when the
+        // current schema does not list the new variants.
+        let needs_rebuild: bool = {
+            let mut stmt = self.conn.prepare(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='service_plan_items'",
+            )?;
+            let sql: Option<String> = stmt.query_row([], |r| r.get(0)).ok();
+            match sql {
+                Some(s) => !s.contains("'momo'") || !s.contains("'jesus'"),
+                None => false,
+            }
+        };
+        if needs_rebuild {
+            self.conn.execute_batch(
+                "
+                BEGIN;
+                DROP TRIGGER IF EXISTS trg_plan_items_session_cascade;
+                ALTER TABLE service_plan_items RENAME TO service_plan_items_old;
+                CREATE TABLE service_plan_items (
+                    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+                    plan_id                 INTEGER NOT NULL,
+                    plan_kind               TEXT    NOT NULL CHECK (plan_kind IN ('template','session')),
+                    order_index             REAL    NOT NULL,
+                    item_type               TEXT    NOT NULL CHECK (item_type IN ('verse','song','announcement','section','blank','momo','jesus')),
+                    item_data               TEXT    NOT NULL,
+                    auto_advance_seconds    INTEGER
+                );
+                INSERT INTO service_plan_items (id, plan_id, plan_kind, order_index, item_type, item_data, auto_advance_seconds)
+                SELECT id, plan_id, plan_kind, order_index, item_type, item_data, auto_advance_seconds
+                FROM service_plan_items_old;
+                DROP TABLE service_plan_items_old;
+                CREATE INDEX IF NOT EXISTS idx_plan_items_scope ON service_plan_items (plan_id, plan_kind, order_index);
+                CREATE TRIGGER IF NOT EXISTS trg_plan_items_session_cascade
+                AFTER DELETE ON sermon_sessions
+                BEGIN
+                    DELETE FROM service_plan_items
+                    WHERE plan_id = OLD.id AND plan_kind = 'session';
+                END;
+                COMMIT;
+                ",
+            )?;
+        }
 
         Ok(())
     }

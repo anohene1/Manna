@@ -5,7 +5,6 @@ import { Badge } from "@/components/ui/badge"
 import { MicIcon, PaletteIcon, CastIcon, SunIcon, MoonIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { SettingsDialog } from "@/components/settings-dialog"
-import { ThemeDesigner } from "@/components/broadcast/theme-designer"
 import { BroadcastSettings } from "@/components/broadcast/broadcast-settings"
 import { useAudioStore, useTranscriptStore, useBroadcastStore } from "@/stores"
 import { useTheme } from "@/components/theme-provider"
@@ -69,7 +68,6 @@ export function TransportBar() {
         >
           <PaletteIcon className="size-3.5" />
         </Button>
-        <ThemeDesigner />
         <SettingsDialog />
       </div>
     </div>
