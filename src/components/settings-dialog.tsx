@@ -48,6 +48,7 @@ import {
 import { useSettingsStore, persistDeepgramApiKey, persistAssemblyAiApiKey, persistClaudeApiKey, persistGeniusToken, persistEnabledHymnals, persistAutoMode, persistConfidenceThreshold, persistSttProvider } from "@/stores"
 import { checkForUpdates } from "@/hooks/use-updater"
 import { HYMNAL_NAMES, HYMNAL_SOURCES } from "@/types"
+import { AudioTestPanel } from "@/components/audio-test-panel"
 import type { HymnalSource } from "@/types"
 import { useTutorialStore } from "@/stores/tutorial-store"
 import { useSettingsDialogStore } from "@/lib/settings-dialog"
@@ -200,6 +201,9 @@ function AudioSection() {
           gain.
         </p>
       </div>
+
+      {/* Live mic test — reads the real cpal stream, not WebKit getUserMedia */}
+      <AudioTestPanel deviceId={audioDeviceId} gain={gain} />
     </div>
   )
 }

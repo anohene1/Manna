@@ -1,4 +1,12 @@
-export type { DeviceInfo, AudioLevel, AudioConfig } from "./audio"
+export type {
+  DeviceInfo,
+  AudioLevel,
+  AudioConfig,
+  AudioTestDevice,
+  AudioTestMeter,
+  AudioTestWaveform,
+  AudioTestStopped,
+} from "./audio"
 export type {
   Word,
   TranscriptSegment,

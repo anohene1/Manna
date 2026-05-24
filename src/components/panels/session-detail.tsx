@@ -159,7 +159,14 @@ export function SessionDetail({ sessionId, sessionTitle, onBack }: SessionDetail
       const result = await summarizeTranscript(text)
       setSummary(result)
     } catch (err) {
-      setSummaryError(err instanceof Error ? err.message : "Summarization failed.")
+      const msg =
+        err instanceof Error
+          ? err.message
+          : typeof err === "string"
+            ? err
+            : JSON.stringify(err)
+      setSummaryError(msg || "Summarization failed.")
+      console.error("[summarize]", err)
     } finally {
       setSummarizing(false)
     }
