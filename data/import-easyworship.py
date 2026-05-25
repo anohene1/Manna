@@ -93,7 +93,7 @@ def build_song_data(slides: list[list[str]]) -> dict:
     return {
         "autoChorus": False,
         "chorus": None,
-        "lineMode": "stanza-full",
+        "lineMode": "stanza-pair",
         "stanzas": stanzas,
         "tune": None,
         "meter": None,

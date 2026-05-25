@@ -5,23 +5,21 @@ import {
   useAudioStore,
   useTranscriptStore,
   useSessionStore,
-  useSettingsStore,
 } from "@/stores"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { LevelMeter } from "@/components/ui/level-meter"
 import { LiveIndicator } from "@/components/ui/live-indicator"
-import { SettingsDialog } from "@/components/settings-dialog"
 import { ApiKeyPrompt } from "@/components/ui/api-key-prompt"
 import { PreflightChecklist } from "@/components/preflight-checklist"
-import { MicIcon, MicOffIcon, Loader2Icon } from "lucide-react"
+import { startServiceFlow } from "@/lib/start-service"
+import { MicIcon, MicOffIcon, Loader2Icon, ArchiveIcon } from "lucide-react"
 
 /* -------------------------------------------------------------------------- */
 /*  Elapsed timer                                                             */
 /* -------------------------------------------------------------------------- */
 
-function formatElapsed(startedAt: string): string {
-  const startMs = new Date(startedAt).getTime()
+function formatElapsed(startMs: number): string {
   const elapsedSec = Math.max(0, Math.floor((Date.now() - startMs) / 1000))
   const h = Math.floor(elapsedSec / 3600)
   const m = Math.floor((elapsedSec % 3600) / 60)
@@ -29,16 +27,16 @@ function formatElapsed(startedAt: string): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
 }
 
-function ElapsedTimer({ startedAt }: { startedAt: string }) {
-  const [elapsed, setElapsed] = useState(() => formatElapsed(startedAt))
+function ElapsedTimer({ startMs }: { startMs: number }) {
+  const [elapsed, setElapsed] = useState(() => formatElapsed(startMs))
 
   useEffect(() => {
-    setElapsed(formatElapsed(startedAt))
+    setElapsed(formatElapsed(startMs))
     const interval = setInterval(() => {
-      setElapsed(formatElapsed(startedAt))
+      setElapsed(formatElapsed(startMs))
     }, 1000)
     return () => clearInterval(interval)
-  }, [startedAt])
+  }, [startMs])
 
   return (
     <span className="font-mono text-xs tabular-nums text-muted-foreground">
@@ -54,59 +52,32 @@ function ElapsedTimer({ startedAt }: { startedAt: string }) {
 export function Toolbar() {
   const activeSession = useSessionStore((s) => s.activeSession)
   const isTranscribing = useTranscriptStore((s) => s.isTranscribing)
+  const transcribingStartedAt = useTranscriptStore((s) => s.transcribingStartedAt)
   const connectionStatus = useTranscriptStore((s) => s.connectionStatus)
   const audioLevel = useAudioStore((s) => s.level)
-  const deepgramApiKey = useSettingsStore((s) => s.deepgramApiKey)
+  const pendingServiceStart = useSessionStore((s) => s.pendingServiceStart)
   const [showKeyPrompt, setShowKeyPrompt] = useState(false)
   const [showPreflight, setShowPreflight] = useState(false)
 
-  const isLive = activeSession?.status === "live"
+  useEffect(() => {
+    if (pendingServiceStart) {
+      setShowPreflight(true)
+      useSessionStore.getState().clearServiceStart()
+    }
+  }, [pendingServiceStart])
+
+  // Only pulse LIVE when both the session is marked live AND transcription
+  // is actively running. Avoids stale red dot from orphaned sessions that
+  // were resumed but never re-armed for transcription.
+  const sessionLive = activeSession?.status === "live"
+  const isLive = sessionLive && isTranscribing
 
   const handleStartServiceClick = () => {
     setShowPreflight(true)
   }
 
   const handleStartService = async () => {
-    try {
-      // Auto-create session if none active
-      if (!useSessionStore.getState().activeSession) {
-        const now = new Date()
-        const date = now.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric", year: "numeric" })
-        const time = now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })
-        const session = await invoke<any>("create_session", {
-          request: {
-            title: `${date} — ${time}`,
-            date: now.toISOString().split("T")[0],
-          }
-        })
-        const started = await invoke<any>("start_session", { id: session.id })
-        useSessionStore.getState().setActiveSession(started)
-      }
-
-      // Start transcription
-      useTranscriptStore.getState().setConnectionStatus("connecting")
-      const settings = useSettingsStore.getState()
-      const providerKey =
-        settings.sttProvider === "deepgram"
-          ? (deepgramApiKey ?? "")
-          : settings.sttProvider === "assemblyai"
-            ? (settings.assemblyAiApiKey ?? "")
-            : ""
-      await invoke("start_transcription", {
-        apiKey: providerKey,
-        deviceId: settings.audioDeviceId,
-        gain: settings.gain,
-        provider: settings.sttProvider,
-      })
-    } catch (e) {
-      const errorMsg = String(e)
-      useTranscriptStore.getState().setConnectionStatus("error")
-      if (errorMsg.includes("No Deepgram API key")) {
-        setShowKeyPrompt(true)
-      } else {
-        alert(errorMsg)
-      }
-    }
+    await startServiceFlow({ onMissingApiKey: () => setShowKeyPrompt(true) })
   }
 
   const handleEndService = async () => {
@@ -118,11 +89,20 @@ export function Toolbar() {
       useTranscriptStore.getState().setPartial("")
       useTranscriptStore.getState().setConnectionStatus("disconnected")
 
-      // End the session
+      // End the session + fire AI summary in the background
       const session = useSessionStore.getState().activeSession
       if (session) {
         await invoke("end_session", { id: session.id })
         useSessionStore.getState().setActiveSession(null)
+        const { generateAndPersistSummary } = await import("@/lib/summarize")
+        void generateAndPersistSummary(session.id)
+
+        // Open Sessions Mode + jump to Summary tab so user sees AI output land.
+        useSessionStore.getState().openSessionInMode({
+          id: session.id,
+          title: session.title,
+          tab: "summary",
+        })
       }
     } catch (e) {
       console.error("Failed to end service:", e)
@@ -139,8 +119,8 @@ export function Toolbar() {
             <span className="max-w-[200px] truncate text-xs font-medium text-foreground">
               {activeSession.title}
             </span>
-            {isLive && activeSession.startedAt && (
-              <ElapsedTimer startedAt={activeSession.startedAt} />
+            {isLive && transcribingStartedAt != null && (
+              <ElapsedTimer startMs={transcribingStartedAt} />
             )}
             <Badge variant="outline" className="capitalize text-[0.625rem]">
               {activeSession.status}
@@ -153,6 +133,14 @@ export function Toolbar() {
 
       {/* Right side: transcription control */}
       <div className="flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          title="View all sessions"
+          onClick={() => useSessionStore.getState().openSessions()}
+        >
+          <ArchiveIcon className="size-3.5" />
+        </Button>
         {isTranscribing && audioLevel && (audioLevel.rms > 0 || audioLevel.peak > 0) && (
           <LevelMeter level={audioLevel.rms} />
         )}
@@ -184,10 +172,8 @@ export function Toolbar() {
         )}
       </div>
 
-      {/* SettingsDialog portal — driven by useSettingsDialogStore */}
-      <span className="hidden">
-        <SettingsDialog />
-      </span>
+      {/* SettingsDialog now mounted globally in App.tsx so it survives the
+          landing screen (toolbar isn't rendered there). */}
 
       <ApiKeyPrompt
         open={showKeyPrompt}

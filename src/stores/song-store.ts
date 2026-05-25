@@ -15,12 +15,22 @@ interface SongRowRpc {
   category?: string | null
 }
 
-function rowToSong(row: SongRowRpc): Song {
-  const inner = JSON.parse(row.data) as {
+function rowToSong(row: SongRowRpc): Song | null {
+  let inner: {
     stanzas: Song["stanzas"]
     chorus: Song["chorus"]
     autoChorus: boolean
     lineMode: LineMode
+  }
+  try {
+    inner = JSON.parse(row.data)
+  } catch (err) {
+    console.warn("[song-store] dropping corrupt row", row.id, err)
+    return null
+  }
+  if (!inner || !Array.isArray(inner.stanzas)) {
+    console.warn("[song-store] dropping malformed row", row.id)
+    return null
   }
   return {
     id: row.id,
@@ -31,7 +41,7 @@ function rowToSong(row: SongRowRpc): Song {
     stanzas: inner.stanzas,
     chorus: inner.chorus,
     autoChorus: inner.autoChorus,
-    lineMode: inner.lineMode,
+    lineMode: inner.lineMode ?? "stanza-pair",
     tune: row.tune ?? null,
     meter: row.meter ?? null,
     scriptureRef: row.scriptureRef ?? null,
@@ -62,6 +72,14 @@ function songToRpc(song: Song): {
   }
 }
 
+export interface OnlinePreview {
+  importId: string
+  title: string
+  author: string
+  stanzas: import("@/types").SongStanza[]
+  chorus: import("@/types").SongStanza | null
+}
+
 interface SongStore {
   songs: Song[]
   loading: boolean
@@ -76,6 +94,11 @@ interface SongStore {
   lrclibSearch: (query: string) => Promise<LrclibHit[]>
   lrclibImport: (hit: LrclibHit) => Promise<Song>
   onlineSearch: (query: string) => Promise<OnlineHit[]>
+  previewOnlineHit: (hit: OnlineHit) => Promise<OnlinePreview>
+}
+
+export function onlineHitImportId(hit: OnlineHit): string {
+  return hit.provider === "genius" ? `genius-${hit.hit.id}` : `lrclib-${hit.hit.id}`
 }
 
 export const useSongStore = create<SongStore>((set, get) => ({
@@ -86,7 +109,7 @@ export const useSongStore = create<SongStore>((set, get) => ({
     set({ loading: true })
     try {
       const rows = await invoke<SongRowRpc[]>("list_songs")
-      set({ songs: rows.map(rowToSong) })
+      set({ songs: rows.map(rowToSong).filter((s): s is Song => s !== null) })
     } catch (e) {
       console.warn("[songs] hydrate failed:", e)
     } finally {
@@ -145,7 +168,7 @@ export const useSongStore = create<SongStore>((set, get) => ({
       stanzas,
       chorus,
       autoChorus: Boolean(chorus),
-      lineMode: "stanza-full",
+      lineMode: "stanza-pair",
       tune: null,
       meter: null,
       scriptureRef: null,
@@ -181,7 +204,7 @@ export const useSongStore = create<SongStore>((set, get) => ({
       stanzas,
       chorus,
       autoChorus: Boolean(chorus),
-      lineMode: "stanza-full",
+      lineMode: "stanza-pair",
       tune: null,
       meter: null,
       scriptureRef: null,
@@ -189,6 +212,42 @@ export const useSongStore = create<SongStore>((set, get) => ({
     }
     await get().saveSong(song)
     return song
+  },
+
+  previewOnlineHit: async (hit) => {
+    if (hit.provider === "genius") {
+      const lyrics = await invoke<string>("fetch_genius_lyrics", { url: hit.hit.url })
+      const { stanzas, chorus } = parseGeniusLyrics(lyrics)
+      if (stanzas.length === 0 && !chorus) {
+        throw new Error("No stanzas parsed from Genius — paste manually.")
+      }
+      return {
+        importId: `genius-${hit.hit.id}`,
+        title: hit.hit.title,
+        author: hit.hit.artist,
+        stanzas,
+        chorus,
+      }
+    }
+    const lyrics = await invoke<{ plainLyrics: string | null; syncedLyrics: string | null }>(
+      "fetch_lrclib_lyrics",
+      { id: hit.hit.id },
+    )
+    const raw = lyrics.plainLyrics ?? (lyrics.syncedLyrics ? stripLrcTimestamps(lyrics.syncedLyrics) : null)
+    if (!raw || raw.trim().length === 0) {
+      throw new Error("LRCLIB returned no lyrics — paste manually.")
+    }
+    const { stanzas, chorus } = parsePlainLyrics(raw)
+    if (stanzas.length === 0 && !chorus) {
+      throw new Error("Could not parse LRCLIB lyrics — paste manually.")
+    }
+    return {
+      importId: `lrclib-${hit.hit.id}`,
+      title: hit.hit.trackName,
+      author: hit.hit.artistName,
+      stanzas,
+      chorus,
+    }
   },
 
   onlineSearch: async (query) => {
@@ -263,6 +322,16 @@ function parsePlainLyrics(raw: string): ParsedLyrics {
     .map((b) => b.trim())
     .filter((b) => b.length > 0)
 
+  // Flat-block fallback: source lacks blank-line stanza breaks but is long
+  // enough that splitting by repeating line runs is worth attempting.
+  if (blocks.length <= 1) {
+    const allLines = raw.split("\n").map((l) => l.trim()).filter(Boolean)
+    if (allLines.length >= 12) {
+      const inferred = inferStanzasByRepetition(allLines)
+      if (inferred) return inferred
+    }
+  }
+
   const stanzas: import("@/types").SongStanza[] = []
   let chorus: import("@/types").SongStanza | null = null
   let verseIdx = 0
@@ -290,6 +359,73 @@ function parsePlainLyrics(raw: string): ParsedLyrics {
   return { stanzas, chorus }
 }
 
+/**
+ * When source lyrics arrive as a single flat block with no blank-line stanza
+ * breaks (common for some LRCLIB entries), find the longest contiguous line
+ * sequence that repeats verbatim ≥2 times and treat it as the chorus. Runs
+ * between chorus occurrences become verses.
+ */
+function inferStanzasByRepetition(lines: string[]): ParsedLyrics | null {
+  const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]+/g, "").replace(/\s+/g, " ").trim()
+  const normalized = lines.map(normalize)
+  const n = lines.length
+  const maxLen = Math.min(8, Math.floor(n / 2))
+
+  for (let len = maxLen; len >= 3; len--) {
+    const buckets = new Map<string, number[]>()
+    for (let i = 0; i + len <= n; i++) {
+      const key = normalized.slice(i, i + len).join("\n")
+      if (!key.replace(/[\s\n]/g, "")) continue
+      const list = buckets.get(key) ?? []
+      list.push(i)
+      buckets.set(key, list)
+    }
+
+    let best: number[] | null = null
+    for (const positions of buckets.values()) {
+      const picked: number[] = []
+      let lastEnd = -1
+      for (const p of positions) {
+        if (p >= lastEnd) {
+          picked.push(p)
+          lastEnd = p + len
+        }
+      }
+      if (picked.length >= 2 && (!best || picked.length > best.length)) {
+        best = picked
+      }
+    }
+
+    if (best) {
+      const chorusLines = lines.slice(best[0], best[0] + len)
+      const chorus: import("@/types").SongStanza = { id: "ch", kind: "chorus", lines: chorusLines }
+      const stanzas: import("@/types").SongStanza[] = []
+      let cursor = 0
+      let verseIdx = 0
+      for (const start of best) {
+        if (start > cursor) {
+          const verseLines = lines.slice(cursor, start)
+          if (verseLines.length > 0) {
+            verseIdx += 1
+            stanzas.push({ id: `v${verseIdx}`, kind: "verse", lines: verseLines })
+          }
+        }
+        cursor = start + len
+      }
+      if (cursor < n) {
+        const tail = lines.slice(cursor)
+        if (tail.length > 0) {
+          verseIdx += 1
+          stanzas.push({ id: `v${verseIdx}`, kind: "verse", lines: tail })
+        }
+      }
+      return { stanzas, chorus }
+    }
+  }
+
+  return null
+}
+
 // ── Genius lyrics parser ──────────────────────────────────────────────────
 //
 // Genius lyrics HTML renders as flat text like:
@@ -315,7 +451,22 @@ interface ParsedLyrics {
   chorus: import("@/types").SongStanza | null
 }
 
-export function parseGeniusLyrics(raw: string): ParsedLyrics {
+function stripGeniusPreamble(raw: string): string {
+  return raw
+    .split("\n")
+    .filter((line) => {
+      const t = line.trim()
+      if (/^\d+\s*Contributors/i.test(t)) return false
+      if (/^Read More\s*$/i.test(t)) return false
+      if (/^Translations(\s|$)/i.test(t)) return false
+      return true
+    })
+    .join("\n")
+    .replace(/^[\s\n]+/, "")
+}
+
+export function parseGeniusLyrics(input: string): ParsedLyrics {
+  const raw = stripGeniusPreamble(input)
   // Strip header junk by locating the first *song-structure* marker — not
   // just any `[...]` token, which could match promotional preamble.
   const songMarker = raw.match(

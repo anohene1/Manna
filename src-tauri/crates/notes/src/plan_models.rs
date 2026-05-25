@@ -39,6 +39,7 @@ pub enum PlanItemType {
     Blank,
     Momo,
     Jesus,
+    Notes,
 }
 
 impl PlanItemType {
@@ -52,6 +53,7 @@ impl PlanItemType {
             Self::Blank => "blank",
             Self::Momo => "momo",
             Self::Jesus => "jesus",
+            Self::Notes => "notes",
         }
     }
 
@@ -65,6 +67,7 @@ impl PlanItemType {
             "blank" => Some(Self::Blank),
             "momo" => Some(Self::Momo),
             "jesus" => Some(Self::Jesus),
+            "notes" => Some(Self::Notes),
             _ => None,
         }
     }

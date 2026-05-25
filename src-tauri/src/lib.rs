@@ -113,7 +113,7 @@ fn seed_one_hymnal(db: &SessionDb, def: &HymnalDef) -> Result<(), Box<dyn std::e
             "stanzas": stanzas_json,
             "chorus": chorus_json,
             "autoChorus": has_chorus,
-            "lineMode": "stanza-full",
+            "lineMode": "stanza-pair",
         });
 
         let id = format!("{}-{}", def.id, hymn.number);
@@ -168,7 +168,7 @@ async fn warm_connection_pool() {
     const HOSTS: &[&str] = &[
         "https://api.deepgram.com",
         "https://api.assemblyai.com",
-        "https://api.anthropic.com",
+        "https://api.deepseek.com",
     ];
     let client = match reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
@@ -235,8 +235,25 @@ pub fn run() {
                 .unwrap_or_else(|| std::path::PathBuf::from("."))
                 .join("com.manna.app");
             std::fs::create_dir_all(&app_data).ok();
-            SessionDb::open(&app_data.join("manna.db"))
-                .expect("Failed to open manna.db")
+            let db_path = app_data.join("manna.db");
+            // Tauri's setup() hasn't run yet, so a plugin-dialog message box
+            // isn't available here. Print to stderr and exit cleanly with a
+            // non-zero code so the user sees a readable message instead of a
+            // panic backtrace. The installer / GUI launcher logs stderr.
+            match SessionDb::open(&db_path) {
+                Ok(db) => db,
+                Err(e) => {
+                    eprintln!(
+                        "FATAL: cannot open manna.db at {}\n\
+                         reason: {e}\n\
+                         The app data directory may be read-only or the DB file is corrupt.\n\
+                         Try deleting {} and restarting (this will reset notes/sessions but keep imported songs).",
+                        db_path.display(),
+                        db_path.display(),
+                    );
+                    std::process::exit(1);
+                }
+            }
         }))
         .invoke_handler(tauri::generate_handler![
             quit_app,
@@ -266,11 +283,19 @@ pub fn run() {
             commands::stt::verify_deepgram_key,
             commands::stt::verify_assemblyai_key,
             commands::stt::verify_claude_key,
+            commands::stt::verify_deepseek_key,
             commands::summarize::summarize_sermon,
+            commands::summarize::generate_live_notes,
+            commands::images::search_pexels,
+            commands::images::search_unsplash,
+            commands::images::list_local_images,
+            commands::images::delete_local_image,
+            commands::images::read_local_image_data_url,
             commands::broadcast::list_monitors,
             commands::broadcast::ensure_broadcast_window,
             commands::broadcast::open_broadcast_window,
             commands::broadcast::close_broadcast_window,
+            commands::broadcast::is_broadcast_open,
             commands::broadcast::set_broadcast_fullscreen,
             commands::broadcast::is_broadcast_fullscreen,
             commands::broadcast::start_ndi,
@@ -292,12 +317,19 @@ pub fn run() {
             commands::session::delete_session,
             commands::session::update_session_title,
             commands::session::update_session_summary,
+            commands::session::update_session_series,
+            commands::session::update_session_tags,
+            commands::session::list_session_series,
+            commands::session::update_transcript_segment,
+            commands::session::delete_transcript_segment,
             commands::session::add_session_detection,
             commands::session::get_session_detections,
+            commands::session::record_presented_verse,
             commands::session::add_session_transcript,
             commands::session::get_session_transcript,
             commands::session::add_session_note,
             commands::session::get_session_notes,
+            commands::session::update_session_note,
             commands::session::add_distribution,
             commands::session::list_distributions,
             commands::session::mark_distribution_sent,
@@ -338,34 +370,69 @@ pub fn run() {
         .setup(|app| {
             use tauri::Manager;
 
+            // Hold a keepawake assertion for the app's lifetime so the laptop
+            // doesn't idle-sleep during a service. Display + idle sleep are
+            // blocked; system sleep (lid close) is honored. The handle is
+            // kept inside AppState so it lives as long as the process.
+            match keepawake::Builder::default()
+                .display(true)
+                .idle(true)
+                .reason("Live broadcast in progress")
+                .app_name("Manna")
+                .app_reverse_domain("com.manna.app")
+                .create()
+            {
+                Ok(handle) => {
+                    log::info!("[sleep] keepawake assertion active");
+                    let managed_state = app.state::<Mutex<state::AppState>>();
+                    match managed_state.lock() {
+                        Ok(mut state) => state.keepawake = Some(handle),
+                        Err(_) => log::warn!("[sleep] could not install keepawake handle — AppState lock poisoned"),
+                    };
+                }
+                Err(e) => log::warn!("[sleep] failed to acquire keepawake: {e}"),
+            }
+
             // Resource-dir first (production), dev fallback via resolve_resource.
             // Installer places rhema.db at $RESOURCE_DIR/data/rhema.db per the
             // per-flavor tauri.conf.*.json resources block.
             let db_path = resolve_resource(app, "data/rhema.db");
 
             if db_path.exists() {
-                let bible_db = rhema_bible::BibleDb::open(&db_path)
-                    .expect("Failed to open Bible database");
+                match rhema_bible::BibleDb::open(&db_path) {
+                    Ok(bible_db) => {
+                        // Build quotation matching index from all English verses
+                        log::info!("Building quotation matching index...");
+                        let quotation_matcher = match bible_db.load_all_verses_for_quotation(Some("en")) {
+                            Ok(verses) => {
+                                log::info!("Loaded {} English verses for quotation index", verses.len());
+                                rhema_detection::QuotationMatcher::build(verses)
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to load verses for quotation index: {e}");
+                                rhema_detection::QuotationMatcher::new()
+                            }
+                        };
 
-                // Build quotation matching index from all English verses
-                log::info!("Building quotation matching index...");
-                let quotation_matcher = match bible_db.load_all_verses_for_quotation(Some("en")) {
-                    Ok(verses) => {
-                        log::info!("Loaded {} English verses for quotation index", verses.len());
-                        rhema_detection::QuotationMatcher::build(verses)
+                        let managed_state = app.state::<Mutex<state::AppState>>();
+                        match managed_state.lock() {
+                            Ok(mut state) => {
+                                state.bible_db = Some(bible_db);
+                                state.quotation_matcher = quotation_matcher;
+                                drop(state);
+                                log::info!("Bible database loaded from {}", db_path.display());
+                            }
+                            Err(_) => log::error!("Could not acquire AppState lock to install Bible DB; Bible features disabled this session"),
+                        };
                     }
                     Err(e) => {
-                        log::warn!("Failed to load verses for quotation index: {e}");
-                        rhema_detection::QuotationMatcher::new()
+                        log::error!(
+                            "Bible database at {} present but unreadable: {e}; \
+                             Bible features disabled this session",
+                            db_path.display()
+                        );
                     }
-                };
-
-                let managed_state = app.state::<Mutex<state::AppState>>();
-                let mut state = managed_state.lock().unwrap();
-                state.bible_db = Some(bible_db);
-                state.quotation_matcher = quotation_matcher;
-                drop(state);
-                log::info!("Bible database loaded from {}", db_path.display());
+                }
             } else {
                 log::warn!("Bible database not found at {}", db_path.display());
             }
@@ -416,28 +483,31 @@ pub fn run() {
                     Ok(embedder) => {
                         log::info!("ONNX embedding model loaded");
                         let managed_state = app.state::<Mutex<state::AppState>>();
-                        let mut state = managed_state.lock().unwrap();
-
-                        // If pre-computed embeddings exist, load the vector index
-                        if embeddings_path.exists() && ids_path.exists() {
-                            let dim = embedder.dimension();
-                            match rhema_detection::HnswVectorIndex::load(&embeddings_path, &ids_path, dim) {
-                                Ok(index) => {
-                                    log::info!("Verse embeddings loaded ({} vectors)", index.len());
-                                    state.detection_pipeline.set_semantic(
-                                        rhema_detection::SemanticDetector::new(
-                                            Box::new(embedder),
-                                            Box::new(index),
-                                        ),
-                                    );
-                                }
-                                Err(e) => {
-                                    log::warn!("Failed to load verse embeddings: {e}");
+                        match managed_state.lock() {
+                            Ok(mut state) => {
+                                // If pre-computed embeddings exist, load the vector index
+                                if embeddings_path.exists() && ids_path.exists() {
+                                    let dim = embedder.dimension();
+                                    match rhema_detection::HnswVectorIndex::load(&embeddings_path, &ids_path, dim) {
+                                        Ok(index) => {
+                                            log::info!("Verse embeddings loaded ({} vectors)", index.len());
+                                            state.detection_pipeline.set_semantic(
+                                                rhema_detection::SemanticDetector::new(
+                                                    Box::new(embedder),
+                                                    Box::new(index),
+                                                ),
+                                            );
+                                        }
+                                        Err(e) => {
+                                            log::warn!("Failed to load verse embeddings: {e}");
+                                        }
+                                    }
+                                } else {
+                                    log::info!("No pre-computed verse embeddings found. Run 'bun run export:verses' then the precompute binary.");
                                 }
                             }
-                        } else {
-                            log::info!("No pre-computed verse embeddings found. Run 'bun run export:verses' then the precompute binary.");
-                        }
+                            Err(_) => log::error!("AppState lock unavailable; semantic search disabled this session"),
+                        };
                     }
                     Err(e) => {
                         log::warn!("Failed to load ONNX model: {e}");

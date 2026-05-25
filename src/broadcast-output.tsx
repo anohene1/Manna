@@ -3,7 +3,8 @@ import { useRef, useEffect, useCallback } from "react"
 import { invoke } from "@tauri-apps/api/core"
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow"
 import { renderVerse } from "@/lib/verse-renderer"
-import type { BroadcastTheme, VerseRenderData } from "@/types/broadcast"
+import { renderNotes } from "@/lib/notes-renderer"
+import type { BroadcastTheme, VerseRenderData, NotesSlide } from "@/types/broadcast"
 import type { NdiConfigEventPayload, NdiFrameRequest } from "@/types"
 
 /** Convert Uint8Array/Uint8ClampedArray to base64 using Function.apply (avoids spread stack overflow) */
@@ -24,28 +25,98 @@ function uint8ToBase64(bytes: Uint8Array | Uint8ClampedArray): string {
 /** Read output ID from URL query param (?output=main or ?output=alt). Defaults to "main". */
 const OUTPUT_ID = new URLSearchParams(window.location.search).get("output") ?? "main"
 
-function drawAnnouncement(
+function drawTickerAnnouncement(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
-  announcement: { text: string; position: "top" | "bottom"; style: "info" | "urgent" } | null,
+  text: string,
+  scrollOffset: number,
 ) {
-  if (!announcement) return
+  const bandHeight = Math.round(height * 0.085)
+  const y = height - bandHeight
 
-  const bandHeight = Math.round(height * 0.12)
-  const y = announcement.position === "top" ? 0 : height - bandHeight
-  const bg = announcement.style === "urgent" ? "rgba(220, 38, 38, 0.92)" : "rgba(15, 23, 42, 0.85)"
-  const fg = "#ffffff"
-
-  ctx.fillStyle = bg
+  // Translucent dark band — current slide content still visible above.
+  ctx.fillStyle = "rgba(10, 12, 16, 0.82)"
   ctx.fillRect(0, y, width, bandHeight)
 
-  const fontSize = Math.round(bandHeight * 0.4)
-  ctx.fillStyle = fg
-  ctx.font = `600 ${fontSize}px system-ui, -apple-system, "Segoe UI", sans-serif`
-  ctx.textAlign = "center"
+  // Subtle top border highlight
+  ctx.fillStyle = "rgba(255, 255, 255, 0.08)"
+  ctx.fillRect(0, y, width, 1)
+
+  const fontSize = Math.round(bandHeight * 0.46)
+  ctx.font = `500 ${fontSize}px "Inter Variable", system-ui, sans-serif`
+  ctx.fillStyle = "#ffffff"
   ctx.textBaseline = "middle"
-  ctx.fillText(announcement.text, width / 2, y + bandHeight / 2, width - 80)
+  ctx.textAlign = "left"
+
+  // Marquee: draw twice for seamless wrap.
+  const textWidth = ctx.measureText(text).width
+  const gap = Math.round(width * 0.1)
+  const totalCycle = textWidth + gap
+  const x1 = width - (scrollOffset % totalCycle)
+  ctx.fillText(text, x1, y + bandHeight / 2)
+  ctx.fillText(text, x1 + totalCycle, y + bandHeight / 2)
+}
+
+function drawSlideAnnouncement(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  text: string,
+) {
+  // Fully opaque background — takes over current slide content.
+  ctx.fillStyle = "#000000"
+  ctx.fillRect(0, 0, width, height)
+
+  const padX = Math.round(width * 0.08)
+  const maxWidth = width - padX * 2
+  const baseSize = Math.round(height * 0.085)
+
+  ctx.fillStyle = "#ffffff"
+  ctx.textAlign = "left"
+  ctx.textBaseline = "alphabetic"
+
+  // Wrap text into lines; shrink font if too tall.
+  let fontSize = baseSize
+  let lines = wrapAnnouncement(ctx, text, maxWidth, fontSize)
+  let lineHeight = Math.round(fontSize * 1.25)
+  while (lines.length * lineHeight > height * 0.7 && fontSize > 24) {
+    fontSize = Math.round(fontSize * 0.92)
+    lines = wrapAnnouncement(ctx, text, maxWidth, fontSize)
+    lineHeight = Math.round(fontSize * 1.25)
+  }
+
+  const blockHeight = lines.length * lineHeight
+  let y = Math.round((height - blockHeight) / 2 + fontSize)
+  for (const line of lines) {
+    ctx.fillText(line, padX, y, maxWidth)
+    y += lineHeight
+  }
+}
+
+function wrapAnnouncement(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  fontSize: number,
+): string[] {
+  ctx.font = `600 ${fontSize}px "Inter Variable", system-ui, sans-serif`
+  const out: string[] = []
+  for (const paragraph of text.split("\n")) {
+    const words = paragraph.split(/\s+/).filter(Boolean)
+    let line = ""
+    for (const word of words) {
+      const test = line ? `${line} ${word}` : word
+      if (ctx.measureText(test).width > maxWidth && line) {
+        out.push(line)
+        line = word
+      } else {
+        line = test
+      }
+    }
+    if (line) out.push(line)
+  }
+  return out
 }
 
 interface BroadcastPayload {
@@ -53,15 +124,16 @@ interface BroadcastPayload {
   verse: VerseRenderData | null
   blankLogo?: boolean
   fullscreenImage?: { url: string; label: string } | null
+  notes?: NotesSlide | null
 }
 
 const BLANK_LOGO_URL = "/EWC-White.png"
 
 interface AnnouncementPayload {
   text: string
-  position: "top" | "bottom"
-  style: "info" | "urgent"
+  mode: "ticker" | "slide"
   duration: number | null
+  paused?: boolean
 }
 
 function BroadcastCanvas() {
@@ -89,6 +161,86 @@ function BroadcastCanvas() {
     console.debug(`[broadcast-output] ${message}`, meta)
   }, [])
 
+  const tickerOffsetRef = useRef(0)
+  const tickerRafRef = useRef<number | null>(null)
+
+  /** Paint the current `data + announcement` frame onto an arbitrary ctx. */
+  const renderFrame = useCallback(
+    (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+      const data = latestData.current
+      if (!data) {
+        ctx.fillStyle = "#000"
+        ctx.fillRect(0, 0, width, height)
+        return
+      }
+      const { theme, verse, blankLogo, fullscreenImage, notes } = data
+      const announcement = announcementRef.current
+
+      if (announcement && announcement.mode === "slide") {
+        drawSlideAnnouncement(ctx, width, height, announcement.text)
+        return
+      }
+
+      if (fullscreenImage) {
+        ctx.fillStyle = "#000"
+        ctx.fillRect(0, 0, width, height)
+        const img = imageCacheRef.current.get(fullscreenImage.url)
+        if (img && img.complete && img.naturalWidth > 0) {
+          const imgAspect = img.naturalWidth / img.naturalHeight
+          const canvasAspect = width / height
+          let w = width
+          let h = height
+          if (imgAspect > canvasAspect) h = width / imgAspect
+          else w = height * imgAspect
+          ctx.drawImage(img, (width - w) / 2, (height - h) / 2, w, h)
+        }
+        if (announcement && announcement.mode === "ticker") {
+          drawTickerAnnouncement(ctx, width, height, announcement.text, tickerOffsetRef.current)
+        }
+        return
+      }
+
+      if (notes) {
+        renderNotes(ctx, theme, notes, width, height)
+        if (announcement && announcement.mode === "ticker") {
+          drawTickerAnnouncement(ctx, width, height, announcement.text, tickerOffsetRef.current)
+        }
+        return
+      }
+
+      if (blankLogo) {
+        ctx.fillStyle = "#000"
+        ctx.fillRect(0, 0, width, height)
+        const img = imageCacheRef.current.get(BLANK_LOGO_URL)
+        if (img && img.complete && img.naturalWidth > 0) {
+          const target = Math.min(width, height) * 0.99
+          const aspect = img.naturalWidth / img.naturalHeight
+          const logoW = aspect >= 1 ? target : target * aspect
+          const logoH = aspect >= 1 ? target / aspect : target
+          ctx.drawImage(img, (width - logoW) / 2, (height - logoH) / 2, logoW, logoH)
+        }
+        if (announcement && announcement.mode === "ticker") {
+          drawTickerAnnouncement(ctx, width, height, announcement.text, tickerOffsetRef.current)
+        }
+        return
+      }
+
+      const result = renderVerse(ctx, theme, verse, {
+        scale: 1,
+        imageCache: imageCacheRef.current,
+      })
+      if (!result) {
+        ctx.fillStyle = "#000"
+        ctx.fillRect(0, 0, width, height)
+        logDebug("renderVerse returned null; drew fallback frame")
+      }
+      if (announcement && announcement.mode === "ticker") {
+        drawTickerAnnouncement(ctx, width, height, announcement.text, tickerOffsetRef.current)
+      }
+    },
+    [logDebug],
+  )
+
   const draw = useCallback(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -96,64 +248,39 @@ function BroadcastCanvas() {
     if (!ctx) return
 
     const data = latestData.current
-    if (!data) {
-      // Black screen when no data
-      ctx.fillStyle = "#000"
-      ctx.fillRect(0, 0, canvas.width, canvas.height)
-      return
+    if (data) {
+      canvas.width = data.theme.resolution.width
+      canvas.height = data.theme.resolution.height
     }
+    renderFrame(ctx, canvas.width, canvas.height)
+  }, [renderFrame])
 
-    const { theme, verse, blankLogo, fullscreenImage } = data
-    canvas.width = theme.resolution.width
-    canvas.height = theme.resolution.height
-
-    if (fullscreenImage) {
-      ctx.fillStyle = "#000"
-      ctx.fillRect(0, 0, canvas.width, canvas.height)
-      const img = imageCacheRef.current.get(fullscreenImage.url)
-      if (img && img.complete && img.naturalWidth > 0) {
-        const imgAspect = img.naturalWidth / img.naturalHeight
-        const canvasAspect = canvas.width / canvas.height
-        let w = canvas.width
-        let h = canvas.height
-        if (imgAspect > canvasAspect) {
-          h = canvas.width / imgAspect
-        } else {
-          w = canvas.height * imgAspect
-        }
-        ctx.drawImage(img, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h)
+  // Drive the ticker animation. Re-renders only while a ticker is active so
+  // we don't burn CPU during normal verse display.
+  useEffect(() => {
+    const loop = () => {
+      const a = announcementRef.current
+      if (a && a.mode === "ticker") {
+        if (!a.paused) tickerOffsetRef.current += 2
+        draw()
+        tickerRafRef.current = requestAnimationFrame(loop)
+      } else {
+        tickerRafRef.current = null
       }
-      drawAnnouncement(ctx, canvas.width, canvas.height, announcementRef.current)
-      return
     }
-
-    if (blankLogo) {
-      ctx.fillStyle = "#000"
-      ctx.fillRect(0, 0, canvas.width, canvas.height)
-      const img = imageCacheRef.current.get(BLANK_LOGO_URL)
-      if (img && img.complete && img.naturalWidth > 0) {
-        const target = Math.min(canvas.width, canvas.height) * 0.99
-        const aspect = img.naturalWidth / img.naturalHeight
-        const logoW = aspect >= 1 ? target : target * aspect
-        const logoH = aspect >= 1 ? target / aspect : target
-        ctx.drawImage(img, (canvas.width - logoW) / 2, (canvas.height - logoH) / 2, logoW, logoH)
-      }
-      drawAnnouncement(ctx, canvas.width, canvas.height, announcementRef.current)
-      return
+    const start = () => {
+      if (tickerRafRef.current == null) tickerRafRef.current = requestAnimationFrame(loop)
     }
-
-    const result = renderVerse(ctx, theme, verse, {
-      scale: 1,
-      imageCache: imageCacheRef.current,
-    })
-    if (!result) {
-      ctx.fillStyle = "#000"
-      ctx.fillRect(0, 0, canvas.width, canvas.height)
-      logDebug("renderVerse returned null; drew fallback frame")
+    const id = window.setInterval(() => {
+      const a = announcementRef.current
+      if (a && a.mode === "ticker") start()
+    }, 250)
+    return () => {
+      window.clearInterval(id)
+      if (tickerRafRef.current != null) cancelAnimationFrame(tickerRafRef.current)
+      tickerRafRef.current = null
     }
-
-    drawAnnouncement(ctx, canvas.width, canvas.height, announcementRef.current)
-  }, [logDebug])
+  }, [draw])
 
   const preloadImage = useCallback((url: string, label: string) => {
     const cache = imageCacheRef.current
@@ -264,6 +391,7 @@ function BroadcastCanvas() {
 
     const unlistenAnnouncement = currentWindow.listen<AnnouncementPayload | null>(`broadcast:announcement:${OUTPUT_ID}`, (event) => {
       announcementRef.current = event.payload
+      tickerOffsetRef.current = 0
       if (announcementTimerRef.current !== null) {
         clearTimeout(announcementTimerRef.current)
         announcementTimerRef.current = null

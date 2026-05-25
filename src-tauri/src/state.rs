@@ -23,6 +23,10 @@ pub struct AppState {
     pub stt_provider: Option<Arc<dyn SttProvider>>,
     #[expect(dead_code, reason = "reserved for future Deepgram key injection")]
     pub deepgram_api_key: Option<String>,
+    /// Holds the OS-level sleep-inhibitor while Manna is running. Dropped on
+    /// app shutdown releases the assertion. Kept as `Option` so creation
+    /// failures don't bring the app down.
+    pub keepawake: Option<keepawake::KeepAwake>,
 }
 
 impl AppState {
@@ -38,6 +42,7 @@ impl AppState {
             audio_test_active: Arc::new(AtomicBool::new(false)),
             stt_provider: None,
             deepgram_api_key: None,
+            keepawake: None,
         }
     }
 }

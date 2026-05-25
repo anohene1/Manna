@@ -68,6 +68,13 @@ pub fn build(app: &App) -> tauri::Result<Menu<Wry>> {
                 true,
                 Some("CmdOrCtrl+Shift+E"),
             )?,
+            &MenuItem::with_id(
+                app,
+                "session:view-all",
+                "View All Sessions",
+                true,
+                Some("CmdOrCtrl+Shift+S"),
+            )?,
             &PredefinedMenuItem::separator(app)?,
             &MenuItem::with_id(
                 app,

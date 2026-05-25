@@ -17,6 +17,13 @@ const DEFAULT_CACHE_CAPACITY: usize = 256;
 /// genuine paraphrased scripture. Only strong semantic matches get through.
 const DEFAULT_CONFIDENCE_THRESHOLD: f64 = 0.60;
 
+/// When use_synonyms is enabled, single-embed runs first. Ensemble only fires
+/// when the top single-embed result is in a "fuzzy" band — clearly weak
+/// (< low gate) skips since nothing will save it, and confident (>= high gate)
+/// skips since the answer is already strong. Keeps lag manageable.
+const ENSEMBLE_FUZZY_LOW: f64 = 0.40;
+const ENSEMBLE_FUZZY_HIGH: f64 = 0.65;
+
 /// Orchestrator that combines text chunking, embedding, vector search,
 /// and caching to detect Bible verses from transcript text using
 /// semantic similarity.
@@ -46,7 +53,7 @@ impl SemanticDetector {
             confidence_threshold: DEFAULT_CONFIDENCE_THRESHOLD,
             synonym_expander: SynonymExpander::new(),
             ensemble: EnsembleSearcher::new(),
-            use_synonyms: false, // Off by default — enable via toggle_paraphrase_detection
+            use_synonyms: true, // Ensemble (original + synonym + concept) for stronger paraphrase accuracy. Costs ~3 embed calls per chunk.
         }
     }
 
@@ -90,9 +97,27 @@ impl SemanticDetector {
 
         let mut detections = Vec::new();
 
-        if self.use_synonyms {
-            // Ensemble search: 3 strategies (original + synonym + concept)
-            // More expensive (~3 embed calls) but much better accuracy for paraphrases.
+        // Single direct embedding first — fast (~1 embed call), good for exact quotes.
+        let Ok(embedding) = self.embedder.embed(text) else { return vec![] };
+        let Ok(single_results) = self.index.search(&embedding, 5) else { return vec![] };
+        self.cache
+            .insert(text.to_string(), (embedding, single_results.clone()));
+
+        let top_single_similarity = single_results
+            .first()
+            .map(|r| r.similarity)
+            .unwrap_or(0.0);
+
+        let now = Self::timestamp_ms();
+
+        // If the single-embed top result is already confident, skip ensemble.
+        // This keeps clear quotes fast while still letting fuzzier phrases
+        // benefit from synonym/concept search.
+        let needs_ensemble = self.use_synonyms
+            && top_single_similarity >= ENSEMBLE_FUZZY_LOW
+            && top_single_similarity < ENSEMBLE_FUZZY_HIGH;
+
+        if needs_ensemble {
             match self.ensemble.search(
                 text,
                 self.embedder.as_ref(),
@@ -100,7 +125,6 @@ impl SemanticDetector {
                 5,
             ) {
                 Ok(results) => {
-                    let now = Self::timestamp_ms();
                     for result in results {
                         if result.best_similarity >= self.confidence_threshold {
                             detections.push(Self::make_detection(
@@ -117,18 +141,8 @@ impl SemanticDetector {
                 }
             }
         } else {
-            // Single direct embedding: fast (~1 embed call), good for exact quotes.
-            let Ok(embedding) = self.embedder.embed(text) else { return vec![] };
-
-            let Ok(results) = self.index.search(&embedding, 5) else { return vec![] };
-
-            // Cache for future lookups
-            self.cache
-                .insert(text.to_string(), (embedding, results.clone()));
-
-            let now = Self::timestamp_ms();
             let mut seen_verse_ids = HashSet::new();
-            for result in &results {
+            for result in &single_results {
                 if result.similarity >= self.confidence_threshold
                     && seen_verse_ids.insert(result.verse_id)
                 {

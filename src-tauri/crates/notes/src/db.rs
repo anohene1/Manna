@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use rusqlite::{params, Connection, Row};
+use rusqlite::{params, Connection, OptionalExtension, Row};
 
 use crate::error::{Result, SessionError};
 use crate::models::{
@@ -34,7 +34,16 @@ impl SessionDb {
 
     /// Run schema migrations, creating tables if they do not exist.
     fn migrate(&self) -> Result<()> {
-        self.conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+        // WAL improves concurrent reads during long-running transcript writes;
+        // NORMAL sync still fsyncs at checkpoint but skips per-commit fsync.
+        // busy_timeout prevents transient SQLITE_BUSY when multiple commands
+        // contend (we serialise via Mutex, but other handles may exist).
+        self.conn.execute_batch(
+            "PRAGMA foreign_keys = ON;
+             PRAGMA journal_mode = WAL;
+             PRAGMA synchronous = NORMAL;
+             PRAGMA busy_timeout = 5000;",
+        )?;
 
         self.conn.execute_batch(
             "
@@ -133,7 +142,7 @@ impl SessionDb {
                 plan_id                 INTEGER NOT NULL,
                 plan_kind               TEXT    NOT NULL CHECK (plan_kind IN ('template','session')),
                 order_index             REAL    NOT NULL,
-                item_type               TEXT    NOT NULL CHECK (item_type IN ('verse','song','announcement','section','blank','momo','jesus')),
+                item_type               TEXT    NOT NULL CHECK (item_type IN ('verse','song','announcement','section','blank','momo','jesus','notes')),
                 item_data               TEXT    NOT NULL,
                 auto_advance_seconds    INTEGER
             );
@@ -162,6 +171,14 @@ impl SessionDb {
             "CREATE INDEX IF NOT EXISTS idx_songs_scripture ON songs(scripture_ref);",
         )?;
 
+        // Migrate older EasyWorship imports from stanza-full → stanza-pair (new default).
+        // Idempotent: only updates rows that still have stanza-full.
+        let _ = self.conn.execute(
+            "UPDATE songs SET data = json_set(data, '$.lineMode', 'stanza-pair') \
+             WHERE source = 'easyworship' AND json_extract(data, '$.lineMode') = 'stanza-full'",
+            [],
+        );
+
         // Widen service_plan_items.item_type CHECK to include momo/jesus.
         // SQLite cannot ALTER a CHECK constraint, so rebuild the table when the
         // current schema does not list the new variants.
@@ -171,7 +188,7 @@ impl SessionDb {
             )?;
             let sql: Option<String> = stmt.query_row([], |r| r.get(0)).ok();
             match sql {
-                Some(s) => !s.contains("'momo'") || !s.contains("'jesus'"),
+                Some(s) => !s.contains("'momo'") || !s.contains("'jesus'") || !s.contains("'notes'"),
                 None => false,
             }
         };
@@ -186,7 +203,7 @@ impl SessionDb {
                     plan_id                 INTEGER NOT NULL,
                     plan_kind               TEXT    NOT NULL CHECK (plan_kind IN ('template','session')),
                     order_index             REAL    NOT NULL,
-                    item_type               TEXT    NOT NULL CHECK (item_type IN ('verse','song','announcement','section','blank','momo','jesus')),
+                    item_type               TEXT    NOT NULL CHECK (item_type IN ('verse','song','announcement','section','blank','momo','jesus','notes')),
                     item_data               TEXT    NOT NULL,
                     auto_advance_seconds    INTEGER
                 );
@@ -235,13 +252,19 @@ impl SessionDb {
 
     /// Retrieve a single session by id.
     pub fn get_session(&self, id: i64) -> Result<SermonSession> {
-        self.conn
+        let parsed = self
+            .conn
             .query_row(
                 "SELECT * FROM sermon_sessions WHERE id = ?1",
                 params![id],
                 |row| Ok(row_to_session(row)),
-            )?
-            .map_err(|_| SessionError::NotFound(id.to_string()))
+            )
+            .optional()?;
+        match parsed {
+            Some(Ok(session)) => Ok(session),
+            Some(Err(e)) => Err(SessionError::Serialization(e)),
+            None => Err(SessionError::NotFound(id.to_string())),
+        }
     }
 
     /// List all sessions ordered by date descending.
@@ -312,6 +335,76 @@ impl SessionDb {
         Ok(())
     }
 
+    /// Update series_name. Empty string clears (stores NULL).
+    pub fn update_session_series(&self, id: i64, series: Option<&str>) -> Result<()> {
+        let series = series.and_then(|s| {
+            let t = s.trim();
+            if t.is_empty() { None } else { Some(t.to_string()) }
+        });
+        let changed = self.conn.execute(
+            "UPDATE sermon_sessions SET series_name = ?1, updated_at = datetime('now') WHERE id = ?2",
+            params![series, id],
+        )?;
+        if changed == 0 {
+            return Err(SessionError::NotFound(id.to_string()));
+        }
+        Ok(())
+    }
+
+    /// Update tags. Pass a JSON array string ("[\"tag1\",\"tag2\"]") — stored as-is.
+    pub fn update_session_tags(&self, id: i64, tags_json: &str) -> Result<()> {
+        let changed = self.conn.execute(
+            "UPDATE sermon_sessions SET tags = ?1, updated_at = datetime('now') WHERE id = ?2",
+            params![tags_json, id],
+        )?;
+        if changed == 0 {
+            return Err(SessionError::NotFound(id.to_string()));
+        }
+        Ok(())
+    }
+
+    /// Update a single transcript segment's text. Used by inline editor on the
+    /// session detail page so operators can clean STT errors after the fact.
+    pub fn update_transcript_segment(&self, segment_id: i64, text: &str) -> Result<()> {
+        let changed = self.conn.execute(
+            "UPDATE session_transcript SET text = ?1 WHERE id = ?2",
+            params![text, segment_id],
+        )?;
+        if changed == 0 {
+            return Err(SessionError::NotFound(segment_id.to_string()));
+        }
+        Ok(())
+    }
+
+    /// Delete a single transcript segment (e.g. blank lines, false starts).
+    pub fn delete_transcript_segment(&self, segment_id: i64) -> Result<()> {
+        let changed = self.conn.execute(
+            "DELETE FROM session_transcript WHERE id = ?1",
+            params![segment_id],
+        )?;
+        if changed == 0 {
+            return Err(SessionError::NotFound(segment_id.to_string()));
+        }
+        Ok(())
+    }
+
+    /// Distinct list of series names already used. Empty/null filtered.
+    pub fn list_session_series(&self) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT series_name FROM sermon_sessions
+             WHERE series_name IS NOT NULL AND TRIM(series_name) != ''
+             ORDER BY series_name COLLATE NOCASE",
+        )?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        let mut out = Vec::new();
+        for r in rows {
+            if let Ok(s) = r {
+                out.push(s);
+            }
+        }
+        Ok(out)
+    }
+
     pub fn update_session_summary(&self, id: i64, summary: &str) -> Result<()> {
         let changed = self.conn.execute(
             "UPDATE sermon_sessions SET summary = ?1, updated_at = datetime('now') WHERE id = ?2",
@@ -369,6 +462,43 @@ impl SessionDb {
             "UPDATE session_detections SET was_presented = 1 WHERE id = ?1",
             params![detection_id],
         )?;
+        Ok(())
+    }
+
+    /// Record that a verse went on-screen during a session.
+    /// Marks the most recent matching detection as presented if one exists,
+    /// otherwise inserts a new manual detection row already flagged presented.
+    pub fn record_presented_verse(
+        &self,
+        session_id: i64,
+        verse_ref: &str,
+        verse_text: &str,
+        translation: &str,
+    ) -> Result<()> {
+        let existing_id: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT id FROM session_detections
+                 WHERE session_id = ?1 AND verse_ref = ?2
+                 ORDER BY detected_at DESC LIMIT 1",
+                params![session_id, verse_ref],
+                |r| r.get(0),
+            )
+            .optional()?;
+
+        if let Some(id) = existing_id {
+            self.conn.execute(
+                "UPDATE session_detections SET was_presented = 1 WHERE id = ?1",
+                params![id],
+            )?;
+        } else {
+            self.conn.execute(
+                "INSERT INTO session_detections
+                   (session_id, verse_ref, verse_text, translation, confidence, source, transcript_snippet, was_presented)
+                 VALUES (?1, ?2, ?3, ?4, 1.0, 'manual', NULL, 1)",
+                params![session_id, verse_ref, verse_text, translation],
+            )?;
+        }
         Ok(())
     }
 
@@ -439,6 +569,18 @@ impl SessionDb {
             params![id],
             row_to_note,
         ).map_err(Into::into)
+    }
+
+    /// Update a note's content in place.
+    pub fn update_note(&self, id: i64, content: &str) -> Result<()> {
+        let changed = self.conn.execute(
+            "UPDATE session_notes SET content = ?1 WHERE id = ?2",
+            params![content, id],
+        )?;
+        if changed == 0 {
+            return Err(SessionError::NotFound(id.to_string()));
+        }
+        Ok(())
     }
 
     /// Get all notes for a session, ordered by creation time.

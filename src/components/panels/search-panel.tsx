@@ -41,11 +41,13 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { useBible, bibleActions } from "@/hooks/use-bible"
-import { toVerseRenderData, retranslateBroadcastVerses } from "@/hooks/use-broadcast"
+import { toVerseRenderData } from "@/hooks/use-broadcast"
+import { switchTranslation } from "@/lib/switch-translation"
 import { useBibleStore, useBroadcastStore, useQueueStore } from "@/stores"
 import type { Book, Verse } from "@/types"
 import { Input } from "@/components/ui/input"
 import { searchContextWithFuse } from "@/lib/context-search"
+import { chaptersIn } from "@/lib/bible-chapters"
 
 type SearchTab = "book" | "context"
 
@@ -77,11 +79,62 @@ function HighlightedText({ text, query }: { text: string; query: string }) {
   )
 }
 
+function BooksGrid({ books, onPick }: { books: Book[]; onPick: (b: Book) => void }) {
+  const ot = books.filter((b) => b.testament === "OT")
+  const nt = books.filter((b) => b.testament === "NT")
+
+  const renderGroup = (label: string, items: Book[]) => (
+    <div className="flex flex-col gap-1.5">
+      <div className="px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </div>
+      <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4">
+        {items.map((book) => (
+          <button
+            key={book.id}
+            onClick={() => onPick(book)}
+            className="flex h-12 flex-col items-start justify-center rounded-md border border-border bg-background px-2 text-left text-xs font-medium transition-colors hover:border-primary/40 hover:bg-primary/5"
+          >
+            <span className="truncate w-full">{book.name}</span>
+            <span className="text-[10px] font-normal text-muted-foreground">
+              {book.abbreviation}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="flex flex-col gap-4">
+      {ot.length > 0 && renderGroup("Old Testament", ot)}
+      {nt.length > 0 && renderGroup("New Testament", nt)}
+    </div>
+  )
+}
+
+function ChaptersGrid({ count, onPick }: { count: number; onPick: (n: number) => void }) {
+  return (
+    <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-8">
+      {Array.from({ length: count }, (_, i) => i + 1).map((n) => (
+        <button
+          key={n}
+          onClick={() => onPick(n)}
+          className="flex aspect-square items-center justify-center rounded-md border border-border bg-background text-sm font-medium tabular-nums transition-colors hover:border-primary/40 hover:bg-primary/5"
+        >
+          {n}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export function SearchPanel() {
   const [activeTab, setActiveTab] = useState<SearchTab>("book")
   const [bookOpen, setBookOpen] = useState(false)
   const [selectedBook, setSelectedBook] = useState<Book | null>(null)
   const [chapter, setChapter] = useState(1)
+  const [chapterPicked, setChapterPicked] = useState(false)
   const [selectedVerseId, setSelectedVerseId] = useState<number | null>(null)
   const [chapterInput, setChapterInput] = useState("")
   const [contextQuery, setContextQuery] = useState("")
@@ -151,6 +204,7 @@ export function SearchPanel() {
       setActiveTab("book")
       setSelectedBook(book)
       setChapter(navChapter)
+      setChapterPicked(true)
       setChapterInput("")
     },
     []
@@ -196,14 +250,21 @@ export function SearchPanel() {
     return unsubscribe
   }, [applyNavigationSelection])
 
-  // When a book is selected, focus the chapter input
+  // When a book is selected, show the chapters grid (no auto chapter pick).
   const handleBookSelect = useCallback((book: Book) => {
     setSelectedBook(book)
     setChapter(1)
+    setChapterPicked(false)
     setChapterInput("")
     setSelectedVerseId(null)
     setBookOpen(false)
-    setTimeout(() => chapterInputRef.current?.focus(), 50)
+  }, [])
+
+  const handleChapterPick = useCallback((ch: number) => {
+    setChapter(ch)
+    setChapterPicked(true)
+    setChapterInput("")
+    setSelectedVerseId(null)
   }, [])
 
   const handleVerseClick = useCallback((verse: Verse) => {
@@ -224,6 +285,7 @@ export function SearchPanel() {
         const ch = parseInt(match[1])
         if (ch >= 1) {
           setChapter(ch)
+          setChapterPicked(true)
           setSelectedVerseId(null)
           // If verse specified, auto-select it after chapter loads
           if (match[2]) {
@@ -471,15 +533,7 @@ export function SearchPanel() {
 
             <Select
               value={String(activeTranslationId)}
-              onValueChange={async (v) => {
-                const id = Number(v)
-                try {
-                  await invoke("set_active_translation", { translationId: id })
-                  useBibleStore.getState().setActiveTranslation(id)
-                  const abbr = useBibleStore.getState().translations.find(t => t.id === id)?.abbreviation ?? ""
-                  await retranslateBroadcastVerses(id, abbr)
-                } catch (err) { console.error(err) }
-              }}
+              onValueChange={(v) => switchTranslation(Number(v))}
             >
               <SelectTrigger size="sm" className="h-7 w-[72px] shrink-0 text-xs">
                 <SelectValue />
@@ -503,15 +557,7 @@ export function SearchPanel() {
             />
               <Select
                 value={String(activeTranslationId)}
-                onValueChange={async (v) => {
-                  const id = Number(v)
-                  try {
-                    await invoke("set_active_translation", { translationId: id })
-                    useBibleStore.getState().setActiveTranslation(id)
-                    const abbr = useBibleStore.getState().translations.find(t => t.id === id)?.abbreviation ?? ""
-                    await retranslateBroadcastVerses(id, abbr)
-                  } catch (err) { console.error(err) }
-                }}
+                onValueChange={(v) => switchTranslation(Number(v))}
               >
                 <SelectTrigger size="sm" className="h-7 w-[72px] shrink-0 text-xs">
                   <SelectValue />
@@ -531,44 +577,93 @@ export function SearchPanel() {
       {/* Book search tab */}
       {activeTab === "book" && (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          {/* STICKY: Chapter header */}
-
-          <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-2 min-h-9">
-            {selectedBook ?
-              <h3 className="text-sm font-semibold text-foreground">
-                {selectedBook.name} {chapter}
-              </h3> : null}
-            {selectedBook ? <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                onClick={() => {
-                  if (chapter > 1) {
-                    setChapter((c) => c - 1)
-                    setChapterInput("")
+          {/* STICKY: Breadcrumb (only when book picked) */}
+          {selectedBook && (
+            <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-2 min-h-9">
+              <div className="flex items-center gap-1.5 text-sm">
+                <button
+                  onClick={() => {
+                    setSelectedBook(null)
+                    setChapterPicked(false)
                     setSelectedVerseId(null)
-                  }
-                }}
-                disabled={chapter <= 1}
-              >
-                <ArrowLeftIcon className="size-3" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                onClick={() => {
-                  setChapter((c) => c + 1)
-                  setChapterInput("")
-                  setSelectedVerseId(null)
-                }}
-              >
-                <ArrowRightIcon className="size-3" />
-              </Button>
-            </div> : null}
-          </div>
+                  }}
+                  className={cn(
+                    "font-medium transition-colors hover:text-primary",
+                    chapterPicked ? "text-muted-foreground" : "text-foreground"
+                  )}
+                >
+                  {selectedBook.name}
+                </button>
+                {chapterPicked && (
+                  <>
+                    <span className="text-muted-foreground/60">›</span>
+                    <button
+                      onClick={() => {
+                        setChapterPicked(false)
+                        setSelectedVerseId(null)
+                      }}
+                      className="font-semibold text-foreground transition-colors hover:text-primary"
+                    >
+                      {chapter}
+                    </button>
+                  </>
+                )}
+              </div>
+              {chapterPicked && (
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={() => {
+                      if (chapter > 1) {
+                        setChapter((c) => c - 1)
+                        setChapterInput("")
+                        setSelectedVerseId(null)
+                      }
+                    }}
+                    disabled={chapter <= 1}
+                  >
+                    <ArrowLeftIcon className="size-3" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={() => {
+                      const max = chaptersIn(selectedBook.book_number)
+                      if (chapter < max) {
+                        setChapter((c) => c + 1)
+                        setChapterInput("")
+                        setSelectedVerseId(null)
+                      }
+                    }}
+                    disabled={chapter >= chaptersIn(selectedBook.book_number)}
+                  >
+                    <ArrowRightIcon className="size-3" />
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
 
+          {/* Books grid — pre-selection */}
+          {!selectedBook && (
+            <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+              <BooksGrid books={books} onPick={handleBookSelect} />
+            </div>
+          )}
 
-          {/* SCROLLABLE: Verse list only */}
+          {/* Chapters grid — after book pick, before chapter pick */}
+          {selectedBook && !chapterPicked && (
+            <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+              <ChaptersGrid
+                count={chaptersIn(selectedBook.book_number)}
+                onPick={handleChapterPick}
+              />
+            </div>
+          )}
+
+          {/* SCROLLABLE: Verse list — after chapter pick */}
+          {selectedBook && chapterPicked && (
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="flex flex-col gap-1 p-2">
               {currentChapter.map((verse) => {
@@ -654,6 +749,7 @@ export function SearchPanel() {
               )})}
             </div>
           </div>
+          )}
         </div>
       )}
 

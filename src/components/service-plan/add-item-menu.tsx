@@ -41,6 +41,10 @@ export function AddItemMenu() {
     await addItem("jesus", { type: "jesus" })
     setOpen(false)
   }
+  const addNotes = async () => {
+    await addItem("notes", { type: "notes", title: "", lastSelection: [] })
+    setOpen(false)
+  }
   const addVerse = () => {
     setOpen(false)
     setVerseDialogOpen(true)
@@ -63,6 +67,7 @@ export function AddItemMenu() {
           <DropdownMenuItem onClick={addSection}>Section header</DropdownMenuItem>
           <DropdownMenuItem onClick={addAnnouncement}>Announcement</DropdownMenuItem>
           <DropdownMenuItem onClick={addBlank}>Blank / logo</DropdownMenuItem>
+          <DropdownMenuItem onClick={addNotes}>Notes</DropdownMenuItem>
           <DropdownMenuItem onClick={addMomo}>MoMo</DropdownMenuItem>
           <DropdownMenuItem onClick={addJesus}>Jesus</DropdownMenuItem>
           <DropdownMenuItem onClick={addVerse}>Verse…</DropdownMenuItem>

@@ -1,8 +1,9 @@
 import { create } from "zustand"
 import { emit } from "@tauri-apps/api/event"
 import { invoke } from "@tauri-apps/api/core"
-import type { BroadcastTheme, VerseRenderData } from "@/types"
+import type { BroadcastTheme, VerseRenderData, NotesSlide } from "@/types"
 import { BUILTIN_THEMES } from "@/lib/builtin-themes"
+import { useSessionStore } from "@/stores/session-store"
 
 type SelectedElement = "verse" | "reference" | null
 
@@ -17,6 +18,11 @@ interface BroadcastState {
   setBlankLogo: (active: boolean) => void
   fullscreenImage: { url: string; label: string } | null
   setFullscreenImage: (img: { url: string; label: string } | null) => void
+  liveNotes: NotesSlide | null
+  setLiveNotes: (slide: NotesSlide | null) => void
+  /** Monitor index where the operator chose to put the projector this session. */
+  projectorMonitorIndex: number | null
+  setProjectorMonitorIndex: (idx: number | null) => void
   history: Array<{ verse: VerseRenderData; presentedAt: number }>
 
   // Designer state
@@ -40,6 +46,7 @@ interface BroadcastState {
   clearScreen: () => void
   syncBroadcastOutput: () => void
   syncBroadcastOutputFor: (outputId: string) => void
+  showProjector: () => void
 
   // Designer actions
   setDesignerOpen: (open: boolean) => void
@@ -53,11 +60,17 @@ interface BroadcastState {
   // Announcements
   announcement: {
     text: string
-    position: "top" | "bottom"
-    style: "info" | "urgent"
+    mode: "ticker" | "slide"
     duration: number | null
+    /** Wall-clock ms when announcement should auto-dismiss. `null` when paused or no duration. */
+    expiresAt: number | null
+    /** When paused: ms left until expiry at the moment of pause. Resume rebuilds expiresAt. */
+    remainingMs: number | null
+    paused: boolean
   } | null
-  sendAnnouncement: (announcement: { text: string; position: "top" | "bottom"; style: "info" | "urgent"; duration: number | null }) => void
+  sendAnnouncement: (announcement: { text: string; mode: "ticker" | "slide"; duration: number | null }) => void
+  pauseAnnouncement: () => void
+  resumeAnnouncement: () => void
   dismissAnnouncement: () => void
 }
 
@@ -102,17 +115,32 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
       blankLogo: active,
       fullscreenImage: active ? null : get().fullscreenImage,
       liveVerse: active ? null : get().liveVerse,
+      liveNotes: active ? null : get().liveNotes,
       isLive: active ? true : get().isLive,
     })
     get().syncBroadcastOutput()
   },
+  projectorMonitorIndex: null,
+  setProjectorMonitorIndex: (projectorMonitorIndex) => set({ projectorMonitorIndex }),
   fullscreenImage: null,
   setFullscreenImage: (fullscreenImage) => {
     set({
       fullscreenImage,
       blankLogo: fullscreenImage ? false : get().blankLogo,
       liveVerse: fullscreenImage ? null : get().liveVerse,
+      liveNotes: fullscreenImage ? null : get().liveNotes,
       isLive: fullscreenImage ? true : get().isLive,
+    })
+    get().syncBroadcastOutput()
+  },
+  liveNotes: null,
+  setLiveNotes: (liveNotes) => {
+    set({
+      liveNotes,
+      liveVerse: liveNotes ? null : get().liveVerse,
+      fullscreenImage: liveNotes ? null : get().fullscreenImage,
+      blankLogo: liveNotes ? false : get().blankLogo,
+      isLive: liveNotes ? true : get().isLive,
     })
     get().syncBroadcastOutput()
   },
@@ -167,6 +195,7 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
       verse: s.liveVerse,
       blankLogo: s.blankLogo,
       fullscreenImage: s.fullscreenImage,
+      notes: s.liveNotes,
     }).catch((err) => console.warn("[broadcast-store]", err))
   },
   syncBroadcastOutput: () => {
@@ -184,8 +213,33 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
   setLive: (isLive) => set({ isLive }),
   setPreviewVerse: (previewVerse) => set({ previewVerse }),
   setLiveVerse: (liveVerse) => {
-    set({ liveVerse, isLive: liveVerse !== null, blankLogo: false, fullscreenImage: liveVerse ? null : get().fullscreenImage })
-    if (liveVerse) get().addToHistory(liveVerse)
+    set({
+      liveVerse,
+      isLive: liveVerse !== null,
+      blankLogo: false,
+      fullscreenImage: liveVerse ? null : get().fullscreenImage,
+      liveNotes: liveVerse ? null : get().liveNotes,
+    })
+    if (liveVerse) {
+      get().addToHistory(liveVerse)
+      const session = useSessionStore.getState().activeSession
+      // Record presentations during planned + live phases — operators often
+      // preview verses on the projector before "Start Service", and those
+      // should still count toward the session's presented history.
+      if (session && session.status !== "completed") {
+        // "Genesis 1:1 (KJV)" → ref="Genesis 1:1", translation="KJV"
+        const m = liveVerse.reference.match(/^(.*?)\s*\(([^)]+)\)\s*$/)
+        const verseRef = m ? m[1].trim() : liveVerse.reference
+        const translation = m ? m[2].trim() : ""
+        const verseText = liveVerse.segments.map((s) => s.text).join(" ")
+        invoke("record_presented_verse", {
+          sessionId: session.id,
+          verseRef,
+          verseText,
+          translation,
+        }).catch((e) => console.warn("[broadcast-store] record_presented_verse failed:", e))
+      }
+    }
     get().syncBroadcastOutput()
   },
   addToHistory: (verse) => {
@@ -194,13 +248,16 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
     set({ history: [{ verse, presentedAt: Date.now() }, ...history].slice(0, 50) })
   },
   goLive: () => {
-    // Always ensure broadcast window is open
-    invoke("ensure_broadcast_window", { outputId: "main" }).catch((err) => console.warn("[broadcast-store]", err))
-    invoke("list_monitors").then((monitors) => {
-      const monitorList = monitors as Array<{ name: string; width: number; height: number }>
-      const targetIdx = monitorList.length > 1 ? 1 : 0
-      invoke("open_broadcast_window", { outputId: "main", monitorIndex: targetIdx }).catch((err) => console.warn("[broadcast-store]", err))
-    }).catch((err) => console.warn("[broadcast-store]", err))
+    const { projectorMonitorIndex } = get()
+    // If projector window is already mounted (e.g. from session start), leave
+    // it alone — re-opening kills the existing window.
+    void invoke("is_broadcast_open", { outputId: "main" })
+      .then((isOpen) => {
+        if (isOpen) return
+        const idx = projectorMonitorIndex ?? 0
+        return invoke("open_broadcast_window", { outputId: "main", monitorIndex: idx })
+      })
+      .catch((err) => console.warn("[broadcast-store]", err))
 
     const { previewVerse } = get()
     if (previewVerse) {
@@ -209,9 +266,37 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
     }
   },
   clearScreen: () => {
-    set({ liveVerse: null, isLive: false, blankLogo: false, fullscreenImage: null })
+    set({ liveVerse: null, isLive: false, blankLogo: false, fullscreenImage: null, liveNotes: null })
     get().syncBroadcastOutput()
     invoke("close_broadcast_window", { outputId: "main" }).catch((err) => console.warn("[broadcast-store]", err))
+  },
+  showProjector: () => {
+    const idx = get().projectorMonitorIndex ?? 0
+    // If projector is reopening after a Kill (nothing live), default to the
+    // blank EWC-logo screen so the audience sees branding, not a black void.
+    const s = get()
+    const hasContent = s.liveVerse !== null || s.fullscreenImage !== null || s.blankLogo
+    if (!hasContent) {
+      set({ blankLogo: true, isLive: true })
+    }
+    void invoke("is_broadcast_open", { outputId: "main" })
+      .then((isOpen) => {
+        if (isOpen) {
+          get().syncBroadcastOutput()
+          return
+        }
+        return invoke("open_broadcast_window", { outputId: "main", monitorIndex: idx }).then(() => {
+          // Fresh window: listener registers AFTER React mount. Emit on a
+          // short burst so the verse-update event lands once the listener is
+          // attached. Without this the projector opens black despite our
+          // blank-logo state.
+          const burst = [120, 300, 600, 1200, 2000]
+          for (const delay of burst) {
+            setTimeout(() => get().syncBroadcastOutput(), delay)
+          }
+        })
+      })
+      .catch((err) => console.warn("[broadcast-store]", err))
   },
 
   // Designer
@@ -275,32 +360,90 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
   // Announcements
   announcement: null,
   sendAnnouncement: (announcement) => {
-    set({ announcement })
+    const expiresAt = announcement.duration ? Date.now() + announcement.duration * 1000 : null
+    const full = {
+      ...announcement,
+      expiresAt,
+      remainingMs: null,
+      paused: false,
+    }
+    set({ announcement: full })
     invoke("ensure_broadcast_window", { outputId: "main" }).catch((err) => console.warn("[broadcast-store]", err))
     void emit("broadcast:announcement:main", announcement).catch((err) => console.warn("[broadcast-store]", err))
     void emit("broadcast:announcement:alt", announcement).catch((err) => console.warn("[broadcast-store]", err))
-    if (announcement.duration) {
-      setTimeout(() => {
-        const current = get().announcement
-        if (current && current.text === announcement.text) {
-          get().dismissAnnouncement()
-        }
-      }, announcement.duration * 1000)
-    }
+    scheduleAnnouncementExpiry(get, set)
+  },
+  pauseAnnouncement: () => {
+    const a = get().announcement
+    if (!a || a.paused || a.expiresAt == null) return
+    const remainingMs = Math.max(0, a.expiresAt - Date.now())
+    set({ announcement: { ...a, paused: true, remainingMs, expiresAt: null } })
+    clearAnnouncementTimer()
+    // Tell broadcast output to freeze the ticker scroll.
+    void emit("broadcast:announcement:main", { ...a, paused: true, remainingMs, expiresAt: null }).catch(() => {})
+    void emit("broadcast:announcement:alt", { ...a, paused: true, remainingMs, expiresAt: null }).catch(() => {})
+  },
+  resumeAnnouncement: () => {
+    const a = get().announcement
+    if (!a || !a.paused) return
+    const remainingMs = a.remainingMs ?? 0
+    const expiresAt = remainingMs > 0 ? Date.now() + remainingMs : null
+    set({ announcement: { ...a, paused: false, expiresAt, remainingMs: null } })
+    void emit("broadcast:announcement:main", { ...a, paused: false, expiresAt, remainingMs: null }).catch(() => {})
+    void emit("broadcast:announcement:alt", { ...a, paused: false, expiresAt, remainingMs: null }).catch(() => {})
+    scheduleAnnouncementExpiry(get, set)
   },
   dismissAnnouncement: () => {
+    clearAnnouncementTimer()
     set({ announcement: null })
     void emit("broadcast:announcement:main", null).catch((err) => console.warn("[broadcast-store]", err))
     void emit("broadcast:announcement:alt", null).catch((err) => console.warn("[broadcast-store]", err))
   },
 }))
 
+// ── Announcement auto-expiry plumbing ──────────────────────────
+// Keep the timer out of closure scope so pause/resume can manipulate it.
+let announcementTimer: number | null = null
+
+function clearAnnouncementTimer() {
+  if (announcementTimer != null) {
+    clearTimeout(announcementTimer)
+    announcementTimer = null
+  }
+}
+
+function scheduleAnnouncementExpiry(
+  get: () => BroadcastState,
+  _set: (partial: Partial<BroadcastState>) => void,
+) {
+  clearAnnouncementTimer()
+  const a = get().announcement
+  if (!a || a.expiresAt == null) return
+  const ms = a.expiresAt - Date.now()
+  if (ms <= 0) {
+    get().dismissAnnouncement()
+    return
+  }
+  announcementTimer = window.setTimeout(() => {
+    announcementTimer = null
+    const cur = get().announcement
+    if (cur && cur.expiresAt != null && cur.expiresAt <= Date.now()) {
+      get().dismissAnnouncement()
+    }
+  }, ms)
+}
+
 export async function hydrateCustomThemes(): Promise<void> {
   try {
     const rows = await invoke<Array<[string, string, string]>>("list_custom_themes")
-    const customThemes: BroadcastTheme[] = rows.map(([_id, _name, json]) => {
-      return JSON.parse(json) as BroadcastTheme
-    })
+    const customThemes: BroadcastTheme[] = []
+    for (const [id, _name, json] of rows) {
+      try {
+        customThemes.push(JSON.parse(json) as BroadcastTheme)
+      } catch (err) {
+        console.warn("[themes] dropping corrupt row", id, err)
+      }
+    }
     if (customThemes.length > 0) {
       const { themes } = useBroadcastStore.getState()
       const builtinIds = new Set(themes.filter(t => t.builtin).map(t => t.id))

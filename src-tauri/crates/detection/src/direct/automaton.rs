@@ -72,8 +72,17 @@ impl BookMatcher {
     /// Results are filtered so that only matches occurring at word boundaries
     /// are returned, and overlapping matches are resolved in favor of the longest.
     pub fn find_books(&self, text: &str) -> Vec<BookMatch> {
-        let text_lower = text.to_lowercase();
-        let text_bytes = text_lower.as_bytes();
+        // Search the original text directly — the automaton is built with
+        // `ascii_case_insensitive(true)`, so lowering ASCII input is
+        // unnecessary. More importantly, the previous `to_lowercase()` call
+        // shifted byte offsets whenever the text contained non-ASCII whose
+        // lowercase form differs in byte length (Unicode case folding). The
+        // returned match offsets pointed into the lowered string, but
+        // downstream `parser::parse_reference` slices the *original* `text`
+        // by `book_match.end`, which would panic or return junk on such
+        // inputs. Book names are ASCII, so ascii_case_insensitive matches
+        // any cased ASCII input directly against the lowered patterns.
+        let text_bytes = text.as_bytes();
         let mut raw_matches: Vec<BookMatch> = Vec::new();
 
         // Use overlapping iterator to get ALL possible matches,
@@ -81,7 +90,7 @@ impl BookMatcher {
         let mut state = aho_corasick::automaton::OverlappingState::start();
         loop {
             self.automaton
-                .find_overlapping(&text_lower, &mut state);
+                .find_overlapping(text, &mut state);
             let Some(mat) = state.get_match() else {
                 break;
             };

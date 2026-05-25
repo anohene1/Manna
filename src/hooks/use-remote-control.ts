@@ -119,15 +119,48 @@ export function useRemoteControl() {
 
     setup()
 
-    // Sync status snapshot to Rust backend periodically for HTTP GET /api/v1/status
-    const statusInterval = setInterval(() => {
-      syncStatusSnapshot()
-    }, 1000)
+    // Only push status when the HTTP API server is actually running —
+    // otherwise we wake every second to invoke a backend command that
+    // immediately errors. Poll the server's running flag at a slow cadence
+    // and run the fast push loop only while it's up.
+    let pushInterval: ReturnType<typeof setInterval> | null = null
+    let httpRunning = false
+
+    const ensurePushLoop = (running: boolean) => {
+      if (running && !pushInterval) {
+        pushInterval = setInterval(syncStatusSnapshot, 1000)
+        // Push immediately so the first /api/v1/status hit isn't stale.
+        syncStatusSnapshot()
+      } else if (!running && pushInterval) {
+        clearInterval(pushInterval)
+        pushInterval = null
+      }
+    }
+
+    const checkHttpStatus = async () => {
+      try {
+        const status = await invoke<{ running: boolean }>("get_http_status")
+        if (cancelled) return
+        if (status.running !== httpRunning) {
+          httpRunning = status.running
+          ensurePushLoop(httpRunning)
+        }
+      } catch {
+        if (httpRunning) {
+          httpRunning = false
+          ensurePushLoop(false)
+        }
+      }
+    }
+
+    checkHttpStatus()
+    const pollInterval = setInterval(checkHttpStatus, 5000)
 
     return () => {
       cancelled = true
       unlisteners.forEach((fn) => fn())
-      clearInterval(statusInterval)
+      clearInterval(pollInterval)
+      if (pushInterval) clearInterval(pushInterval)
     }
   }, [])
 }

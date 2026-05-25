@@ -7,6 +7,10 @@ interface TranscriptState {
   segments: TranscriptSegment[]
   currentPartial: string
   isTranscribing: boolean
+  /** Epoch ms when transcription most recently started. Null when not running.
+   *  Used by the toolbar elapsed timer so the clock starts on Start Service,
+   *  not on session creation. */
+  transcribingStartedAt: number | null
   connectionStatus: ConnectionStatus
 
   addSegment: (segment: TranscriptSegment) => void
@@ -20,6 +24,7 @@ export const useTranscriptStore = create<TranscriptState>((set) => ({
   segments: [],
   currentPartial: "",
   isTranscribing: false,
+  transcribingStartedAt: null,
   connectionStatus: "disconnected",
 
   addSegment: (segment) =>
@@ -28,7 +33,13 @@ export const useTranscriptStore = create<TranscriptState>((set) => ({
       currentPartial: "",
     })),
   setPartial: (currentPartial) => set({ currentPartial }),
-  setTranscribing: (isTranscribing) => set({ isTranscribing }),
+  setTranscribing: (isTranscribing) =>
+    set((state) => ({
+      isTranscribing,
+      transcribingStartedAt: isTranscribing
+        ? state.transcribingStartedAt ?? Date.now()
+        : null,
+    })),
   setConnectionStatus: (connectionStatus) => set({ connectionStatus }),
   clearTranscript: () => set({ segments: [], currentPartial: "" }),
 }))

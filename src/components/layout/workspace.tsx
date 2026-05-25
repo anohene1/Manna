@@ -19,15 +19,18 @@ import { ServicePlanPanel } from "@/components/panels/service-plan-panel"
 // PlannerPanel merged into QueuePanel — search + queue in one place
 import { BroadcastMonitor } from "@/components/broadcast/broadcast-monitor"
 import { HistoryPanel } from "@/components/panels/history-panel"
+import { SessionsLanding } from "./sessions-landing"
+import { ProjectorPickerDialog } from "@/components/broadcast/projector-picker-dialog"
 import { AboutDialog } from "@/components/about-dialog"
 import { EndSessionDialog } from "@/components/session/end-session-dialog"
 import { ExportNotesDrawer } from "@/components/session/export-notes-drawer"
 import { DistributeSummaryDrawer } from "@/components/session/distribute-summary-drawer"
 import { AnnouncementDialog } from "@/components/broadcast/announcement-dialog"
+import { NotesSelectionDrawer } from "@/components/notes/notes-selection-drawer"
 import { ThemeDesigner } from "@/components/broadcast/theme-designer"
-import { SessionsPanel } from "@/components/panels/sessions-panel"
 import { NotesPanel } from "@/components/panels/notes-panel"
 import { SongsPanel } from "@/components/panels/songs-panel"
+import { ImagesPanel } from "@/components/panels/images-panel"
 import { SongJumpDialog } from "@/components/songs/song-jump-dialog"
 import { AnalyticsPanel } from "@/components/panels/analytics-panel"
 import { useAboutDialogStore } from "@/lib/about-dialog"
@@ -79,10 +82,9 @@ const TAB_PANEL_MAP: Record<string, PanelId> = {
   search: "left",
   notes: "left",
   songs: "left",
-  sessions: "left",
+  images: "left",
   detections: "center",
   analytics: "center",
-  plan: "right",
   queue: "right",
   "cross-refs": "right",
   planner: "right",
@@ -99,8 +101,13 @@ export function Workspace() {
   const [songJumpOpen, setSongJumpOpen] = useState(false)
   const { theme, setTheme } = useTheme()
   const mainGroupRef = useGroupRef()
+  const rightGroupRef = useGroupRef()
   const panelTabs = usePanelTabsStore()
   const isTranscribing = useTranscriptStore((s) => s.isTranscribing)
+  const activeSession = useSessionStore((s) => s.activeSession)
+  const workspaceUnlocked = useSessionStore((s) => s.workspaceUnlocked)
+  const sessionsMode = useSessionStore((s) => s.sessionsMode)
+  const showLanding = !activeSession && !workspaceUnlocked
 
   // Cmd/Ctrl+G — open song jump dialog.
   // Skip when user is typing in an input/textarea/contentEditable so we
@@ -143,6 +150,9 @@ export function Workspace() {
           if (session) {
             useEndSessionDialogStore.getState().openEndSession(session.id)
           }
+        },
+        viewAllSessions: () => {
+          useSessionStore.getState().openSessions()
         },
         importPlan: () => {
           // Deferred until Planner feature is built
@@ -202,6 +212,18 @@ export function Workspace() {
           openUrl("https://github.com/openbezal/rhema/issues/new")
         },
         navigateTo: (tab: string) => {
+          // Plan now lives in its own pinned bottom slot — expand it if collapsed.
+          if (tab === "plan") {
+            const mainLayout = mainGroupRef.current?.getLayout()
+            if (mainLayout && (mainLayout.right ?? 0) < 15) {
+              mainGroupRef.current?.setLayout(DEFAULT_LAYOUT)
+            }
+            const rightLayout = rightGroupRef.current?.getLayout()
+            if (rightLayout && (rightLayout["right-bottom"] ?? 0) < 15) {
+              rightGroupRef.current?.setLayout({ "right-top": 60, "right-bottom": 40 })
+            }
+            return
+          }
           const panel = TAB_PANEL_MAP[tab]
           if (panel) {
             usePanelTabsStore.getState().setTab(panel, tab)
@@ -212,14 +234,19 @@ export function Workspace() {
           }
         },
       }),
-    [theme, setTheme, mainGroupRef]
+    [theme, setTheme, mainGroupRef, rightGroupRef]
   )
 
   // Bridge native menu events to command registry
   useMenuEvents(commands)
 
+  if (showLanding) {
+    return <SessionsLanding />
+  }
+
   return (
     <div className="fixed inset-0 flex flex-col bg-background">
+      {sessionsMode && <SessionsLanding />}
       {/* Command palette (Cmd+K) */}
       <CommandPalette commands={commands} />
 
@@ -229,7 +256,9 @@ export function Workspace() {
       <ExportNotesDrawer />
       <DistributeSummaryDrawer />
       <AnnouncementDialog />
+      <NotesSelectionDrawer />
       <ThemeDesigner />
+      <ProjectorPickerDialog />
       <SongJumpDialog open={songJumpOpen} onOpenChange={setSongJumpOpen} />
 
       {/* Toolbar */}
@@ -248,10 +277,10 @@ export function Workspace() {
             activeTab={panelTabs.tabs.left}
             onTabChange={(id) => panelTabs.setTab("left", id)}
             tabs={[
-              { id: "search", label: "Search", content: <SearchPanel /> },
-              { id: "sessions", label: "Sessions", content: <SessionsPanel /> },
+              { id: "search", label: "Bible", content: <SearchPanel /> },
               { id: "notes", label: "Notes", content: <NotesPanel /> },
               { id: "songs", label: "Songs", content: <SongsPanel /> },
+              { id: "images", label: "Images", content: <ImagesPanel /> },
             ]}
           />
         </Panel>
@@ -311,19 +340,33 @@ export function Workspace() {
 
         <VerticalHandle />
 
-        {/* Right panel — queue / staging */}
+        {/* Right column — top: queue/history/cross-refs tabs, bottom: persistent service plan */}
         <Panel id="right" defaultSize="25%" minSize="15%" maxSize="40%">
-          <PanelTabs
-            className="h-full"
-            activeTab={panelTabs.tabs.right}
-            onTabChange={(id) => panelTabs.setTab("right", id)}
-            tabs={[
-              { id: "plan", label: "Plan", content: <ServicePlanPanel /> },
-              { id: "queue", label: "Queue", content: <QueuePanel /> },
-              { id: "history", label: "History", content: <HistoryPanel /> },
-              { id: "cross-refs", label: "Cross-refs", content: <CrossRefPanel /> },
-            ]}
-          />
+          <Group orientation="vertical" className="h-full" groupRef={rightGroupRef}>
+            <Panel id="right-top" defaultSize="60%" minSize="20%">
+              <PanelTabs
+                className="h-full"
+                activeTab={panelTabs.tabs.right}
+                onTabChange={(id) => panelTabs.setTab("right", id)}
+                tabs={[
+                  { id: "queue", label: "Queue", content: <QueuePanel /> },
+                  { id: "history", label: "History", content: <HistoryPanel /> },
+                  { id: "cross-refs", label: "Cross-refs", content: <CrossRefPanel /> },
+                ]}
+              />
+            </Panel>
+            <HorizontalHandle />
+            <Panel id="right-bottom" defaultSize="40%" minSize="15%">
+              <div className="flex h-full flex-col overflow-hidden bg-card">
+                <div className="flex h-7 shrink-0 items-center gap-1.5 border-b border-border bg-muted/30 px-3 text-xs font-medium text-muted-foreground">
+                  Service Plan
+                </div>
+                <div className="min-h-0 flex-1 overflow-hidden">
+                  <ServicePlanPanel />
+                </div>
+              </div>
+            </Panel>
+          </Group>
         </Panel>
 
         <VerticalHandle />

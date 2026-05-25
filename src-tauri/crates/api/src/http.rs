@@ -25,9 +25,12 @@ pub struct HttpConfig {
 
 impl Default for HttpConfig {
     fn default() -> Self {
+        // Loopback-only. Exposing the control endpoint on every interface is
+        // a defense-in-depth footgun — callers that explicitly want LAN access
+        // should opt in by setting `host` themselves on a trusted network.
         Self {
             port: 8080,
-            host: "0.0.0.0".into(),
+            host: "127.0.0.1".into(),
         }
     }
 }
@@ -112,11 +115,21 @@ where
         status,
     });
 
+    // Loopback default means no browser origin should be hitting us; serve
+    // a restrictive CORS that only allows same-origin (loopback) calls.
+    let cors = CorsLayer::new()
+        .allow_origin(tower_http::cors::AllowOrigin::list([
+            "http://127.0.0.1".parse().unwrap(),
+            "http://localhost".parse().unwrap(),
+        ]))
+        .allow_methods([axum::http::Method::GET, axum::http::Method::POST])
+        .allow_headers([axum::http::header::CONTENT_TYPE, axum::http::header::AUTHORIZATION]);
+
     let app = Router::new()
         .route("/api/v1/health", get(health_handler))
         .route("/api/v1/status", get(status_handler::<S>))
         .route("/api/v1/control", post(control_handler::<S>))
-        .layer(CorsLayer::permissive())
+        .layer(cors)
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(bind_addr).await.map_err(|e| {

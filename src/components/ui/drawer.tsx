@@ -50,13 +50,23 @@ function DrawerContent({
       <DrawerOverlay />
       <DrawerPrimitive.Content
         data-slot="drawer-content"
+        // Container itself does NOT scroll. The middle (body) child gets
+        // `flex-1 overflow-y-auto` via the sibling selector below so header
+        // and footer stay pinned at top/bottom of the drawer.
+        // Direct children that aren't header / footer / the grab handle are
+        // promoted to a scrollable flex region.
         className={cn(
-          "fixed inset-x-0 bottom-0 z-50 mt-24 flex h-auto flex-col rounded-t-xl border border-border/60 bg-popover shadow-2xl",
+          "fixed inset-x-0 bottom-0 z-50 flex max-h-[92vh] flex-col overflow-hidden rounded-t-xl border border-border/60 bg-popover shadow-2xl",
+          "[&>*:not([data-slot=drawer-header]):not([data-slot=drawer-footer]):not([data-slot=drawer-handle])]:min-h-0",
+          "[&>*:not([data-slot=drawer-header]):not([data-slot=drawer-footer]):not([data-slot=drawer-handle])]:flex-1",
+          "[&>*:not([data-slot=drawer-header]):not([data-slot=drawer-footer]):not([data-slot=drawer-handle])]:overflow-y-auto",
           className
         )}
         {...props}
       >
-        <div className="mx-auto mt-4 h-1.5 w-12 shrink-0 rounded-full bg-muted" />
+        <div data-slot="drawer-handle" className="shrink-0">
+          <div className="mx-auto mt-4 h-1.5 w-12 rounded-full bg-muted" />
+        </div>
         {children}
       </DrawerPrimitive.Content>
     </DrawerPortal>
@@ -67,7 +77,7 @@ function DrawerHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="drawer-header"
-      className={cn("flex flex-col gap-1.5 p-4", className)}
+      className={cn("flex shrink-0 flex-col gap-1.5 p-4", className)}
       {...props}
     />
   )
@@ -77,7 +87,11 @@ function DrawerFooter({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="drawer-footer"
-      className={cn("flex flex-col gap-2 p-4 pt-0", className)}
+      // Pinned at bottom of the drawer (not the body scroll region).
+      className={cn(
+        "flex shrink-0 flex-col gap-2 border-t border-border/60 bg-popover p-4 shadow-[0_-6px_12px_-8px_rgba(0,0,0,0.25)]",
+        className,
+      )}
       {...props}
     />
   )

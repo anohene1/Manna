@@ -1,7 +1,7 @@
 import { useBroadcastStore } from "@/stores/broadcast-store"
 import { useBibleStore } from "@/stores/bible-store"
 import { invoke } from "@tauri-apps/api/core"
-import type { VerseRenderData } from "@/types"
+import type { Book, VerseRenderData } from "@/types"
 import type { Verse } from "@/types"
 
 export function toVerseRenderData(verse: Verse, translation: string): VerseRenderData {
@@ -31,29 +31,67 @@ const parseRef = (ref: string) => {
 }
 
 export async function retranslateBroadcastVerses(translationId: number, abbreviation: string) {
-  const books = useBibleStore.getState().books
+  let books = useBibleStore.getState().books
+  if (books.length === 0) {
+    try {
+      books = await invoke<Book[]>("list_books", { translationId })
+      useBibleStore.getState().setBooks(books)
+    } catch (err) {
+      console.warn("[retranslate] failed to load books:", err)
+    }
+  }
   const broadcast = useBroadcastStore.getState()
 
   const refetch = async (current: VerseRenderData | null): Promise<VerseRenderData | null> => {
     if (!current) return null
     const parsed = parseRef(current.reference)
-    if (!parsed) return null
-    const book = books.find(b => b.name === parsed.bookName)
-    if (!book) return null
+    if (!parsed) {
+      console.warn("[retranslate] parseRef failed for reference:", current.reference)
+      return null
+    }
+    const target = parsed.bookName.toLowerCase()
+    const book =
+      books.find(b => b.name === parsed.bookName) ??
+      books.find(b => b.name.toLowerCase() === target) ??
+      books.find(b => b.abbreviation?.toLowerCase() === target)
+    if (!book) {
+      console.warn(
+        "[retranslate] book lookup failed for",
+        parsed.bookName,
+        "— available names:",
+        books.map(b => b.name),
+      )
+      return null
+    }
     const v = await invoke<Verse | null>("get_verse", {
       translationId,
       bookNumber: book.book_number,
       chapter: parsed.chapter,
       verse: parsed.verse,
     })
-    return v ? toVerseRenderData(v, abbreviation) : null
+    if (!v) {
+      console.warn("[retranslate] get_verse returned null:", {
+        translationId,
+        bookNumber: book.book_number,
+        chapter: parsed.chapter,
+        verse: parsed.verse,
+      })
+      return null
+    }
+    return toVerseRenderData(v, abbreviation)
   }
 
   const [nextLive, nextPreview] = await Promise.all([
     refetch(broadcast.liveVerse),
     refetch(broadcast.previewVerse),
   ])
-  if (nextLive) useBroadcastStore.getState().setLiveVerse(nextLive)
+  if (nextLive) {
+    useBroadcastStore.getState().setLiveVerse(nextLive)
+  } else if (broadcast.liveVerse) {
+    // Refetch failed but a verse is still live — re-emit to projector so it
+    // doesn't silently keep showing the previous translation's payload.
+    useBroadcastStore.getState().syncBroadcastOutput()
+  }
   if (nextPreview) useBroadcastStore.getState().setPreviewVerse(nextPreview)
 }
 

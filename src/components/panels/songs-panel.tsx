@@ -31,6 +31,7 @@ export function SongsPanel() {
           s.source === "custom" ||
           s.source === "genius" ||
           s.source === "lrclib" ||
+          s.source === "easyworship" ||
           enabledHymnals.includes(s.source),
       ),
     [allSongs, enabledHymnals],
@@ -97,7 +98,13 @@ export function SongsPanel() {
             </ul>
           )
         ) : (
-          <OnlineSearchResults query={query} />
+          <OnlineSearchResults
+            query={query}
+            onImported={(songId) => {
+              setTab("local")
+              setDetailId(songId)
+            }}
+          />
         )}
       </div>
 

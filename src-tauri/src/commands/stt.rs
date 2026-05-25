@@ -117,9 +117,9 @@ pub async fn start_transcription(
                 );
             }
 
+            let key_preview: String = resolved_api_key.chars().take(8).collect();
             log::info!(
-                "Starting AssemblyAI transcription: api_key={}..., device_id={device_id:?}, gain={gain:?}",
-                &resolved_api_key[..8.min(resolved_api_key.len())]
+                "Starting AssemblyAI transcription: api_key={key_preview}..., device_id={device_id:?}, gain={gain:?}"
             );
 
             let stt_config = SttConfig {
@@ -147,9 +147,9 @@ pub async fn start_transcription(
                 );
             }
 
+            let key_preview: String = resolved_api_key.chars().take(8).collect();
             log::info!(
-                "Starting Deepgram transcription: api_key={}..., device_id={device_id:?}, gain={gain:?}",
-                &resolved_api_key[..8.min(resolved_api_key.len())]
+                "Starting Deepgram transcription: api_key={key_preview}..., device_id={device_id:?}, gain={gain:?}"
             );
 
             let stt_config = SttConfig {
@@ -517,7 +517,9 @@ static LAST_SEMANTIC_EMIT: std::sync::atomic::AtomicU64 = std::sync::atomic::Ato
 
 /// Run semantic (ONNX embedding) detection. Slow, runs in background worker.
 fn run_semantic_detection(app: &AppHandle, transcript: &str) {
-    log::info!("[DET-SEMANTIC] Running on: {:?}", &transcript[..transcript.len().min(80)]);
+    // Char-safe truncation — raw byte slice panics on multi-byte UTF-8.
+    let preview: String = transcript.chars().take(80).collect();
+    log::info!("[DET-SEMANTIC] Running on: {preview:?}");
 
     // Skip short phrases — too many false positives from casual speech
     let word_count = transcript.split_whitespace().count();
@@ -536,6 +538,12 @@ fn run_semantic_detection(app: &AppHandle, transcript: &str) {
         log::info!("[DET-SEMANTIC] Cooldown active, skipping");
         return;
     }
+    // KNOWN ISSUE: this holds the AppState mutex for the full ONNX inference
+    // (50-400ms). Other commands touching AppState block during that window.
+    // Proper fix requires extracting SemanticDetector behind its own Arc<Mutex<>>
+    // so inference can run without the outer AppState lock. Tracked separately
+    // — current mitigation is that the semantic worker has its own bounded
+    // mpsc channel (capacity 4) that drops if backlogged.
     let managed: State<'_, Mutex<AppState>> = app.state();
     let mut app_state = match managed.lock() {
         Ok(s) => s,
@@ -1156,6 +1164,60 @@ pub async fn verify_claude_key(api_key: String) -> Result<VerifyResult, String> 
         Ok(r) if r.status().is_success() => (true, "Claude key verified.".into()),
         Ok(r) if r.status() == reqwest::StatusCode::UNAUTHORIZED => {
             (false, "Invalid key (401)".into())
+        }
+        Ok(r) => (false, format!("Unexpected HTTP {}", r.status())),
+        Err(e) => (false, format!("HTTP probe failed: {e}")),
+    };
+
+    Ok(VerifyResult {
+        ok: http_ok,
+        http_ok,
+        ws_ok: true,
+        detail,
+    })
+}
+
+/// Verify a DeepSeek API key by hitting GET /v1/models (OpenAI-compatible).
+#[tauri::command]
+pub async fn verify_deepseek_key(api_key: String) -> Result<VerifyResult, String> {
+    if api_key.trim().is_empty() {
+        return Ok(VerifyResult {
+            ok: false,
+            http_ok: false,
+            ws_ok: true,
+            detail: "empty key".into(),
+        });
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(PROBE_TIMEOUT)
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .http1_only()
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client
+        .get("https://api.deepseek.com/v1/models")
+        .bearer_auth(&api_key)
+        .send()
+        .await
+        .map_err(|e| {
+            use std::error::Error;
+            let mut detail = format!("network: {e}");
+            let mut src: Option<&dyn Error> = Error::source(&e);
+            while let Some(s) = src {
+                detail.push_str(&format!(" → {s}"));
+                src = s.source();
+            }
+            detail
+        });
+
+    let (http_ok, detail) = match resp {
+        Ok(r) if r.status().is_success() => (true, "DeepSeek key verified.".into()),
+        Ok(r) if r.status() == reqwest::StatusCode::UNAUTHORIZED => {
+            (false, "Invalid key (401)".into())
+        }
+        Ok(r) if r.status() == reqwest::StatusCode::FORBIDDEN => {
+            (false, "Forbidden (402/403) — check billing / balance".into())
         }
         Ok(r) => (false, format!("Unexpected HTTP {}", r.status())),
         Err(e) => (false, format!("HTTP probe failed: {e}")),

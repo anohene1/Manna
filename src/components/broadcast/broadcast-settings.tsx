@@ -4,12 +4,12 @@ import { emit, listen } from "@tauri-apps/api/event"
 import { toast } from "sonner"
 import { availableMonitors, getAllWindows, type Monitor } from '@tauri-apps/api/window'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer"
 import {
   Select,
   SelectContent,
@@ -381,17 +381,15 @@ export function BroadcastSettings({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="sm:max-w-[700px] gap-4"
-        showCloseButton={true}
-      >
-        <DialogHeader>
-          <DialogTitle>Broadcast</DialogTitle>
-          <DialogDescription>
+    <Drawer open={open} onOpenChange={onOpenChange}>
+      <DrawerContent className="left-1/2 right-auto max-h-[85vh] w-full max-w-3xl -translate-x-1/2 gap-4">
+        <DrawerHeader>
+          <DrawerTitle>Broadcast</DrawerTitle>
+          <DrawerDescription>
             Configure two independent outputs with different themes.
-          </DialogDescription>
-        </DialogHeader>
+          </DrawerDescription>
+        </DrawerHeader>
+        <div className="overflow-y-auto px-4 pb-4">
 
         <div className="grid grid-cols-2 gap-4">
           {/* ── Main Output Card ── */}
@@ -813,7 +811,8 @@ export function BroadcastSettings({
             )}
           </div>
         </div>
-      </DialogContent>
-    </Dialog>
+        </div>
+      </DrawerContent>
+    </Drawer>
   )
 }

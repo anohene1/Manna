@@ -3,12 +3,12 @@ import { useState, useEffect, useCallback } from "react"
 import { PencilIcon, TrashIcon, CheckIcon, XIcon } from "lucide-react"
 import { toast } from "sonner"
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+  Drawer,
+  DrawerContent,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useServicePlan } from "@/hooks/use-service-plan"
@@ -85,13 +85,13 @@ export function TemplateManager({ open, onOpenChange }: Props) {
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Service Plan Templates</DialogTitle>
-        </DialogHeader>
+    <Drawer open={open} onOpenChange={onOpenChange}>
+      <DrawerContent className="left-1/2 right-auto max-h-[85vh] w-full max-w-2xl -translate-x-1/2">
+        <DrawerHeader>
+          <DrawerTitle>Service Plan Templates</DrawerTitle>
+        </DrawerHeader>
 
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 overflow-y-auto px-4 pb-2">
           <div>
             <p className="mb-1 text-xs text-muted-foreground">
               Save current plan as template:
@@ -167,10 +167,10 @@ export function TemplateManager({ open, onOpenChange }: Props) {
           </div>
         </div>
 
-        <DialogFooter>
+        <DrawerFooter className="flex flex-row justify-end gap-2">
           <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </DrawerFooter>
+      </DrawerContent>
+    </Drawer>
   )
 }

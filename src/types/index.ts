@@ -17,7 +17,7 @@ export type { QueueItem } from "./queue"
 export type { Song, SongStanza, SongSource, LineMode, GeniusHit, LrclibHit, OnlineHit, HymnalSource } from "./song"
 export { GHS_SEED_VERSION, HYMNAL_SOURCES, HYMNAL_NAMES, HYMNAL_BADGES, isHymnalSource } from "./song"
 export type { DetectionResult, DetectionStatus } from "./detection"
-export type { BroadcastTheme, VerseRenderData, VerseSegment, RenderOptions } from "./broadcast"
+export type { BroadcastTheme, VerseRenderData, VerseSegment, RenderOptions, NotesSlide } from "./broadcast"
 export type {
   NdiAlphaMode,
   NdiConfigEventPayload,
@@ -36,7 +36,7 @@ export type {
 
 export type PlanKind = "template" | "session"
 
-export type PlanItemType = "verse" | "song" | "announcement" | "section" | "blank" | "momo" | "jesus"
+export type PlanItemType = "verse" | "song" | "announcement" | "section" | "blank" | "momo" | "jesus" | "notes"
 
 export interface TemplateMeta {
   id: number
@@ -70,6 +70,10 @@ export interface PlanItemAnnouncement {
   title: string
   body: string
   themeId?: string
+  /** Display mode on broadcast. Defaults to "slide" when missing. */
+  mode?: "ticker" | "slide"
+  /** Auto-dismiss after N seconds. `null` = manual dismiss. Default null. */
+  duration?: number | null
 }
 
 export interface PlanItemSection {
@@ -80,6 +84,8 @@ export interface PlanItemSection {
 export interface PlanItemBlank {
   type: "blank"
   showLogo: boolean
+  imageUrl?: string
+  imageLabel?: string
 }
 
 export interface PlanItemMomo {
@@ -90,6 +96,14 @@ export interface PlanItemJesus {
   type: "jesus"
 }
 
+export interface PlanItemNotes {
+  type: "notes"
+  /** Optional slide header. Empty string treated as "no header". */
+  title: string
+  /** Ordered session-note IDs from prior open. Used as defaults next time the drawer mounts. */
+  lastSelection: number[]
+}
+
 export type PlanItemPayload =
   | PlanItemVerse
   | PlanItemSong
@@ -98,6 +112,7 @@ export type PlanItemPayload =
   | PlanItemBlank
   | PlanItemMomo
   | PlanItemJesus
+  | PlanItemNotes
 
 export interface PlanItem {
   id: number
@@ -138,13 +153,27 @@ export function parsePlanItem(item: PlanItem): PlanItemPayload | null {
       return { type: "section", label: parsed.label }
     }
     if (type === "blank") {
-      return { type: "blank", showLogo: Boolean(parsed.showLogo) }
+      return {
+        type: "blank",
+        showLogo: Boolean(parsed.showLogo),
+        imageUrl: typeof parsed.imageUrl === "string" ? parsed.imageUrl : undefined,
+        imageLabel: typeof parsed.imageLabel === "string" ? parsed.imageLabel : undefined,
+      }
     }
     if (type === "momo") {
       return { type: "momo" }
     }
     if (type === "jesus") {
       return { type: "jesus" }
+    }
+    if (type === "notes") {
+      return {
+        type: "notes",
+        title: typeof parsed.title === "string" ? parsed.title : "",
+        lastSelection: Array.isArray(parsed.lastSelection)
+          ? (parsed.lastSelection as unknown[]).filter((n): n is number => typeof n === "number")
+          : [],
+      }
     }
     return null
   } catch {

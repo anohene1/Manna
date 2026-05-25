@@ -13,6 +13,7 @@ import {
   PlusIcon,
   BookOpenIcon,
   MusicIcon,
+  ImageIcon,
 } from "lucide-react"
 import { useQueueStore, useBroadcastStore, useBibleStore, useSongStore } from "@/stores"
 import { toVerseRenderData } from "@/hooks/use-broadcast"
@@ -38,6 +39,10 @@ function QueueItemCard({
       useBroadcastStore.getState().goLive()
       return
     }
+    if (item.kind === "image") {
+      useBroadcastStore.getState().setFullscreenImage({ url: item.url, label: item.label })
+      return
+    }
     bibleActions.selectVerse(item.verse)
     const translation = useBibleStore.getState().translations
       .find(t => t.id === useBibleStore.getState().activeTranslationId)?.abbreviation ?? "KJV"
@@ -52,6 +57,11 @@ function QueueItemCard({
       const song = useSongStore.getState().getSong(item.songId)
       const render = songStanzaToRenderData(item, song)
       if (render) useBroadcastStore.getState().setPreviewVerse(render)
+      return
+    }
+    if (item.kind === "image") {
+      // Preview = stage for go-live; reuse fullscreenImage for visual feedback
+      useBroadcastStore.getState().setFullscreenImage({ url: item.url, label: item.label })
       return
     }
     bibleActions.selectVerse(item.verse)
@@ -81,11 +91,17 @@ function QueueItemCard({
           {index + 1}
         </span>
         <span className={cn("shrink-0 pt-0.5", isActive ? "text-primary-foreground/70" : "text-muted-foreground/60")} aria-hidden>
-          {item.kind === "verse" ? <BookOpenIcon className="size-2.5" /> : <MusicIcon className="size-2.5" />}
+          {item.kind === "verse" ? (
+            <BookOpenIcon className="size-2.5" />
+          ) : item.kind === "image" ? (
+            <ImageIcon className="size-2.5" />
+          ) : (
+            <MusicIcon className="size-2.5" />
+          )}
         </span>
         <div className="min-w-0 flex-1">
           <span className={cn("text-[11px] font-semibold", isActive ? "text-primary-foreground" : "text-foreground")}>
-            {item.reference}
+            {item.kind === "image" ? (item.label || "Image") : item.reference}
           </span>
           {item.kind === "verse" ? (
             <p className={cn(
@@ -94,6 +110,14 @@ function QueueItemCard({
             )}>
               {item.verse.text}
             </p>
+          ) : item.kind === "image" ? (
+            <div className="mt-1 flex items-center justify-center overflow-hidden rounded bg-black/40 ring-1 ring-border/40">
+              <img
+                src={item.thumbnailUrl ?? item.url}
+                alt={item.label}
+                className="max-h-32 w-auto max-w-full object-contain"
+              />
+            </div>
           ) : (
             <p className={cn(
               "whitespace-pre-line font-serif text-[13px] leading-relaxed",

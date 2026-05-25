@@ -7,16 +7,18 @@ interface IndexDoc {
   number: string
   author: string
   firstLines: string
+  lyrics: string
 }
 
 function buildIndex(songs: Song[]): MiniSearch<IndexDoc> {
   const ms = new MiniSearch<IndexDoc>({
-    fields: ["title", "number", "author", "firstLines"],
+    fields: ["title", "number", "author", "firstLines", "lyrics"],
     storeFields: ["id"],
     searchOptions: {
-      boost: { title: 3, firstLines: 1, author: 1, number: 2 },
+      boost: { title: 4, firstLines: 2, number: 3, author: 1, lyrics: 0.6 },
       prefix: true,
       fuzzy: 0.2,
+      combineWith: "AND",
     },
   })
   const docs: IndexDoc[] = songs.map((s) => ({
@@ -25,9 +27,22 @@ function buildIndex(songs: Song[]): MiniSearch<IndexDoc> {
     number: s.number !== null ? String(s.number) : "",
     author: s.author ?? "",
     firstLines: s.stanzas.map((st) => st.lines[0] ?? "").join(" "),
+    lyrics: s.stanzas.flatMap((st) => st.lines).join(" "),
   }))
   ms.addAll(docs)
   return ms
+}
+
+// Cache the index per songs[] identity so re-renders on keystrokes don't
+// rebuild MiniSearch over all 2800+ EW songs.
+let cachedSongs: Song[] | null = null
+let cachedIndex: MiniSearch<IndexDoc> | null = null
+
+function getIndex(songs: Song[]): MiniSearch<IndexDoc> {
+  if (cachedSongs === songs && cachedIndex) return cachedIndex
+  cachedSongs = songs
+  cachedIndex = buildIndex(songs)
+  return cachedIndex
 }
 
 const PREFIX_RE = /^(ghs|mhb|sankey|snk|sda)\s+(\d+)$/i
@@ -50,17 +65,16 @@ export function searchSongs(songs: Song[], query: string): Song[] {
     const n = parseInt(q, 10)
     const direct = songs.find((s) => s.source === "ghs" && s.number === n)
     if (direct) {
-      const rest = songs.filter((s) => s.id !== direct.id)
-      const index = buildIndex(rest)
+      const index = getIndex(songs)
       const fuzzy = index
         .search(q)
-        .map((r) => rest.find((s) => s.id === r.id))
-        .filter((s): s is Song => Boolean(s))
+        .map((r) => songs.find((s) => s.id === r.id))
+        .filter((s): s is Song => Boolean(s) && s.id !== direct.id)
       return [direct, ...fuzzy]
     }
   }
 
-  const index = buildIndex(songs)
+  const index = getIndex(songs)
   return index
     .search(q)
     .map((r) => songs.find((s) => s.id === r.id))

@@ -29,3 +29,10 @@ export type QueueItem =
       /** Pre-rendered text for this specific expanded chunk. */
       text: string
     })
+  | (QueueItemBase & {
+      kind: "image"
+      url: string
+      label: string
+      thumbnailUrl?: string
+      provider: "pexels" | "unsplash" | "local"
+    })

@@ -23,7 +23,7 @@ pub struct SongRow {
 #[tauri::command]
 pub fn list_songs(db: State<'_, DbState>) -> Result<Vec<SongRow>, String> {
     db.lock()
-        .unwrap()
+        .map_err(|e| e.to_string())?
         .list_songs()
         .map(|rows| {
             rows.into_iter()
@@ -47,7 +47,7 @@ pub fn list_songs(db: State<'_, DbState>) -> Result<Vec<SongRow>, String> {
 #[tauri::command]
 pub fn get_song(db: State<'_, DbState>, id: String) -> Result<SongRow, String> {
     db.lock()
-        .unwrap()
+        .map_err(|e| e.to_string())?
         .get_song(&id)
         .map(|(id, source, number, title, author, data, tune, meter, scripture_ref, category)| SongRow {
             id,
@@ -76,7 +76,7 @@ pub fn save_song(
     data: String,
 ) -> Result<(), String> {
     db.lock()
-        .unwrap()
+        .map_err(|e| e.to_string())?
         .save_song(&id, &source, number, &title, author.as_deref(), &data, 0)
         .map_err(|e| e.to_string())
 }
@@ -84,7 +84,7 @@ pub fn save_song(
 #[tauri::command]
 pub fn delete_song(db: State<'_, DbState>, id: String) -> Result<(), String> {
     db.lock()
-        .unwrap()
+        .map_err(|e| e.to_string())?
         .delete_song(&id)
         .map_err(|e| e.to_string())
 }

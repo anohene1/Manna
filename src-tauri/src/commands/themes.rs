@@ -9,7 +9,7 @@ pub fn list_custom_themes(
     db: State<'_, DbState>,
 ) -> Result<Vec<(String, String, String)>, String> {
     db.lock()
-        .unwrap()
+        .map_err(|e| e.to_string())?
         .list_custom_themes()
         .map_err(|e| e.to_string())
 }
@@ -22,7 +22,7 @@ pub fn save_custom_theme(
     theme_json: String,
 ) -> Result<(), String> {
     db.lock()
-        .unwrap()
+        .map_err(|e| e.to_string())?
         .save_custom_theme(&id, &name, &theme_json)
         .map_err(|e| e.to_string())
 }
@@ -33,7 +33,7 @@ pub fn delete_custom_theme(
     id: String,
 ) -> Result<(), String> {
     db.lock()
-        .unwrap()
+        .map_err(|e| e.to_string())?
         .delete_custom_theme(&id)
         .map_err(|e| e.to_string())
 }

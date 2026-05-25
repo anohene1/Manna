@@ -2,6 +2,8 @@
 import { useBroadcastStore, useBibleStore, useQueueStore } from "@/stores"
 import { parsePlanItem } from "@/types"
 import type { PlanItem } from "@/types"
+import { openNotesSelectionDrawer } from "@/lib/notes-selection-drawer"
+import { useAnnouncementDialogStore } from "@/lib/announcement-dialog"
 
 /**
  * Route a PlanItem to the right broadcast primitive.
@@ -27,8 +29,15 @@ export function activatePlanItem(item: PlanItem): void {
       return
 
     case "blank":
-      broadcast.setLiveVerse(null)
-      broadcast.setBlankLogo(parsed.showLogo)
+      if (parsed.imageUrl) {
+        broadcast.setFullscreenImage({ url: parsed.imageUrl, label: parsed.imageLabel ?? "" })
+      } else if (parsed.showLogo) {
+        broadcast.setLiveVerse(null)
+        broadcast.setBlankLogo(true)
+      } else {
+        broadcast.setLiveVerse(null)
+        broadcast.setBlankLogo(false)
+      }
       return
 
     case "verse": {
@@ -43,10 +52,9 @@ export function activatePlanItem(item: PlanItem): void {
     }
 
     case "announcement": {
-      broadcast.setLiveVerse({
-        reference: parsed.title,
-        segments: [{ text: parsed.body }],
-      })
+      // Open the announcement edit dialog instead of pushing live immediately,
+      // so the operator can review/tweak then hit "Go Live" inside the dialog.
+      useAnnouncementDialogStore.getState().openAnnouncementForEdit(item)
       return
     }
 
@@ -62,6 +70,11 @@ export function activatePlanItem(item: PlanItem): void {
 
     case "jesus": {
       broadcast.setFullscreenImage({ url: "/JESUSs.png", label: "Jesus" })
+      return
+    }
+
+    case "notes": {
+      openNotesSelectionDrawer(item.id)
       return
     }
   }

@@ -25,7 +25,7 @@ pub struct VerseFrequency {
 pub fn get_aggregate_stats(db: State<'_, DbState>) -> Result<AggregateStats, String> {
     let (total_sessions, total_detections, total_hours, top_book) = db
         .lock()
-        .unwrap()
+        .map_err(|e| e.to_string())?
         .get_aggregate_stats()
         .map_err(|e| e.to_string())?;
     Ok(AggregateStats {
@@ -40,7 +40,7 @@ pub fn get_aggregate_stats(db: State<'_, DbState>) -> Result<AggregateStats, Str
 pub fn get_verse_frequency(db: State<'_, DbState>, limit: i64) -> Result<Vec<VerseFrequency>, String> {
     let rows = db
         .lock()
-        .unwrap()
+        .map_err(|e| e.to_string())?
         .get_verse_frequency(limit)
         .map_err(|e| e.to_string())?;
     Ok(rows
@@ -52,7 +52,7 @@ pub fn get_verse_frequency(db: State<'_, DbState>, limit: i64) -> Result<Vec<Ver
 #[tauri::command]
 pub fn get_recent_sessions(db: State<'_, DbState>, limit: i64) -> Result<Vec<SermonSession>, String> {
     db.lock()
-        .unwrap()
+        .map_err(|e| e.to_string())?
         .get_recent_sessions(limit)
         .map_err(|e| e.to_string())
 }
@@ -60,7 +60,7 @@ pub fn get_recent_sessions(db: State<'_, DbState>, limit: i64) -> Result<Vec<Ser
 #[tauri::command]
 pub fn get_session_detection_count(db: State<'_, DbState>, session_id: i64) -> Result<i64, String> {
     db.lock()
-        .unwrap()
+        .map_err(|e| e.to_string())?
         .get_session_detection_count(session_id)
         .map_err(|e| e.to_string())
 }

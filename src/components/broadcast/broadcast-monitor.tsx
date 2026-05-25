@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react"
-import { ChevronLeftIcon, ChevronRightIcon, ChevronDownIcon, CheckIcon } from "lucide-react"
+import { ChevronLeftIcon, ChevronRightIcon, ChevronDownIcon, CheckIcon, PauseIcon, PlayIcon, XIcon } from "lucide-react"
 import { useBroadcastStore, useBibleStore, useSessionStore, useQueueStore, useSongStore } from "@/stores"
-import { toVerseRenderData, retranslateBroadcastVerses } from "@/hooks/use-broadcast"
+import { toVerseRenderData } from "@/hooks/use-broadcast"
+import { switchTranslation } from "@/lib/switch-translation"
 import { bibleActions } from "@/hooks/use-bible"
 import { songStanzaToRenderData } from "@/lib/song-to-render"
 import { invoke } from "@tauri-apps/api/core"
@@ -11,9 +12,12 @@ import { CanvasVerse } from "@/components/ui/canvas-verse"
 export function BroadcastMonitor() {
   const previewVerse = useBroadcastStore((s) => s.previewVerse)
   const liveVerse = useBroadcastStore((s) => s.liveVerse)
+  const fullscreenImage = useBroadcastStore((s) => s.fullscreenImage)
+  const blankLogo = useBroadcastStore((s) => s.blankLogo)
   const isLive = useBroadcastStore((s) => s.isLive)
   const goLive = useBroadcastStore((s) => s.goLive)
   const clearScreen = useBroadcastStore((s) => s.clearScreen)
+  const announcement = useBroadcastStore((s) => s.announcement)
   const themes = useBroadcastStore((s) => s.themes)
   const activeThemeId = useBroadcastStore((s) => s.activeThemeId)
   const setActiveTheme = useBroadcastStore((s) => s.setActiveTheme)
@@ -146,19 +150,47 @@ export function BroadcastMonitor() {
               On Screen {isLive ? "— Live" : ""}
             </span>
           </div>
-          {isLive && (
+          <div className="flex items-center gap-1">
+            {announcement && <AnnouncementControl announcement={announcement} />}
             <button
-              onClick={clearScreen}
-              className="rounded border border-destructive/25 bg-destructive/12 px-2 py-0.5 text-[9px] font-semibold uppercase text-destructive transition-colors hover:bg-destructive/20"
+              onClick={() => {
+                const b = useBroadcastStore.getState()
+                b.setBlankLogo(true)
+              }}
+              className={`rounded border px-2 py-0.5 text-[9px] font-semibold uppercase transition-colors ${
+                blankLogo
+                  ? "border-primary/40 bg-primary/20 text-primary"
+                  : "border-white/15 bg-white/[0.04] text-white/60 hover:bg-white/[0.08]"
+              }`}
+              title="Show church logo blank screen"
             >
-              Clear
+              Blank
             </button>
-          )}
+            {isLive ? (
+              <button
+                onClick={clearScreen}
+                className="rounded border border-destructive/25 bg-destructive/12 px-2 py-0.5 text-[9px] font-semibold uppercase text-destructive transition-colors hover:bg-destructive/20"
+                title="Stop broadcasting and close projector window"
+              >
+                Kill Projector
+              </button>
+            ) : (
+              <button
+                onClick={() => useBroadcastStore.getState().showProjector()}
+                className="rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[9px] font-semibold uppercase text-emerald-400 transition-colors hover:bg-emerald-500/20"
+                title="Reopen projector window on last-used monitor"
+              >
+                Show Projector
+              </button>
+            )}
+          </div>
         </div>
         <div className={`overflow-hidden rounded ${isLive ? "ring-2 ring-destructive/40" : "ring-1 ring-white/[0.08]"}`}>
           <CanvasVerse
             theme={activeTheme}
             verse={liveVerse}
+            fullscreenImage={fullscreenImage}
+            blankLogo={blankLogo}
             className="w-full"
           />
         </div>
@@ -290,18 +322,12 @@ export function BroadcastMonitor() {
         </AccordionSection>
 
         {/* Translation toggle — accordion */}
-        <AccordionSection title="Translation" subtitle={translations.find(t => t.id === activeTranslationId)?.abbreviation}>
+        <AccordionSection title="Translation" subtitle={translations.find(t => t.id === activeTranslationId)?.abbreviation} defaultOpen>
           <div className="flex flex-wrap gap-1.5">
             {translations.slice(0, 7).map((t) => (
               <button
                 key={t.id}
-                onClick={async () => {
-                  try {
-                    await invoke("set_active_translation", { translationId: t.id })
-                    useBibleStore.getState().setActiveTranslation(t.id)
-                    await retranslateBroadcastVerses(t.id, t.abbreviation)
-                  } catch {}
-                }}
+                onClick={() => switchTranslation(t.id)}
                 className={`rounded-full px-3 py-1.5 text-[10px] font-semibold transition-all ${
                   t.id === activeTranslationId
                     ? "bg-primary text-primary-foreground shadow-[0_0_8px_rgba(61,107,79,0.3)]"
@@ -344,6 +370,56 @@ function AccordionSection({ title, subtitle, children, defaultOpen = false }: {
           {children}
         </div>
       )}
+    </div>
+  )
+}
+
+function AnnouncementControl({
+  announcement,
+}: {
+  announcement: NonNullable<ReturnType<typeof useBroadcastStore.getState>["announcement"]>
+}) {
+  const [now, setNow] = useState(() => Date.now())
+  const hasDuration = announcement.expiresAt != null || announcement.remainingMs != null
+  useEffect(() => {
+    if (!hasDuration) return
+    const id = window.setInterval(() => setNow(Date.now()), 250)
+    return () => window.clearInterval(id)
+  }, [hasDuration])
+
+  const remainingMs = announcement.paused
+    ? announcement.remainingMs ?? 0
+    : announcement.expiresAt
+      ? Math.max(0, announcement.expiresAt - now)
+      : null
+
+  const secs = remainingMs != null ? Math.ceil(remainingMs / 1000) : null
+
+  return (
+    <div className="flex items-center gap-1 rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5">
+      <span className="text-[9px] font-semibold uppercase tracking-wide text-amber-400">
+        {announcement.mode === "ticker" ? "Ticker" : "Slide"}
+        {secs != null && ` · ${secs}s`}
+      </span>
+      {hasDuration && (
+        <button
+          onClick={() => {
+            const b = useBroadcastStore.getState()
+            announcement.paused ? b.resumeAnnouncement() : b.pauseAnnouncement()
+          }}
+          className="rounded p-0.5 text-amber-400 hover:bg-amber-500/20"
+          title={announcement.paused ? "Resume announcement" : "Pause announcement"}
+        >
+          {announcement.paused ? <PlayIcon className="size-3" /> : <PauseIcon className="size-3" />}
+        </button>
+      )}
+      <button
+        onClick={() => useBroadcastStore.getState().dismissAnnouncement()}
+        className="rounded p-0.5 text-amber-400 hover:bg-destructive/30 hover:text-destructive"
+        title="Dismiss announcement"
+      >
+        <XIcon className="size-3" />
+      </button>
     </div>
   )
 }

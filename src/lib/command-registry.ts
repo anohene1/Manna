@@ -29,6 +29,7 @@ function hasLiveSession(): boolean {
 export function createCommands(actions: {
   newSession: () => void
   endSession: () => void
+  viewAllSessions: () => void
   importPlan: () => void
   exportNotes: () => void
   distributeSummary: () => void
@@ -57,6 +58,7 @@ export function createCommands(actions: {
     // Session
     { id: "session:new", label: "New Session…", group: "Session", shortcut: "⌘N", execute: actions.newSession },
     { id: "session:end", label: "End Session", group: "Session", shortcut: "⌘⇧E", enabled: hasLiveSession, execute: actions.endSession },
+    { id: "session:view-all", label: "View All Sessions", group: "Session", shortcut: "⌘⇧S", execute: actions.viewAllSessions },
     { id: "session:import-plan", label: "Import Plan…", group: "Session", execute: actions.importPlan },
     { id: "session:export-notes", label: "Export Notes…", group: "Session", shortcut: "⌘⇧X", enabled: hasActiveSession, execute: actions.exportNotes },
     { id: "session:distribute-summary", label: "Distribute Summary…", group: "Session", enabled: hasActiveSession, execute: actions.distributeSummary },
@@ -73,7 +75,7 @@ export function createCommands(actions: {
     { id: "view:toggle-theme", label: "Toggle Theme", group: "View", execute: actions.toggleTheme },
 
     // Navigate
-    { id: "navigate:search", label: "Search", group: "Navigate", execute: () => actions.navigateTo("search") },
+    { id: "navigate:search", label: "Bible", group: "Navigate", execute: () => actions.navigateTo("search") },
     { id: "navigate:notes", label: "Notes", group: "Navigate", execute: () => actions.navigateTo("notes") },
     { id: "navigate:songs", label: "Songs", group: "Navigate", execute: () => actions.navigateTo("songs") },
     { id: "navigate:sessions", label: "Sessions", group: "Navigate", execute: () => actions.navigateTo("sessions") },

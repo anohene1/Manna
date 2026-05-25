@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react"
-import { GripVerticalIcon, Trash2Icon, PencilIcon, BookOpenIcon, MusicIcon, MegaphoneIcon, SquareIcon, MinusIcon, SmartphoneIcon, HeartIcon } from "lucide-react"
+import { GripVerticalIcon, Trash2Icon, PencilIcon, BookOpenIcon, MusicIcon, MegaphoneIcon, SquareIcon, MinusIcon, SmartphoneIcon, HeartIcon, ListIcon, PauseIcon, PlayIcon, XIcon } from "lucide-react"
 import type { PlanItem } from "@/types"
 import { parsePlanItem } from "@/types"
 import { Button } from "@/components/ui/button"
 import { useServicePlan } from "@/hooks/use-service-plan"
-import { useSongStore } from "@/stores"
+import { useBroadcastStore, useSongStore } from "@/stores"
 import { activatePlanItem } from "@/components/service-plan/activation-router"
 
 interface Props {
@@ -26,6 +26,7 @@ function iconFor(type: PlanItem["itemType"]) {
     case "blank": return <SquareIcon className="size-3.5" />
     case "momo": return <SmartphoneIcon className="size-3.5" />
     case "jesus": return <HeartIcon className="size-3.5" />
+    case "notes": return <ListIcon className="size-3.5" />
   }
 }
 
@@ -40,9 +41,16 @@ function ItemLabel({ item }: { item: PlanItem }) {
     case "song": return <>{songTitle ?? `Song ${parsed.songId}`}</>
     case "announcement": return <>{parsed.title}</>
     case "section": return <>{parsed.label}</>
-    case "blank": return <>{parsed.showLogo ? "Blank (logo)" : "Blank"}</>
+    case "blank":
+      if (parsed.imageUrl) return <>{parsed.imageLabel ? `Image — ${parsed.imageLabel}` : "Image"}</>
+      return <>{parsed.showLogo ? "Blank (logo)" : "Blank"}</>
     case "momo": return <>MoMo</>
     case "jesus": return <>Jesus</>
+    case "notes": {
+      const count = parsed.lastSelection.length
+      const label = parsed.title || "Notes"
+      return <>{count > 0 ? `${label} (${count})` : label}</>
+    }
   }
 }
 
@@ -56,7 +64,7 @@ export function ServicePlanItem({
   dragRef,
 }: Props) {
   const { setActiveItem, deleteItem } = useServicePlan()
-  const editable = item.itemType === "announcement" || item.itemType === "section"
+  const editable = item.itemType === "announcement" || item.itemType === "section" || item.itemType === "blank"
 
   const onClick = () => {
     if (item.itemType === "section") return
@@ -64,46 +72,56 @@ export function ServicePlanItem({
     activatePlanItem(item)
   }
 
+  const isAnnouncement = item.itemType === "announcement"
+
   return (
     <div
       ref={dragRef}
       {...dragAttrs}
-      className={`group relative flex items-center gap-2 rounded-md border px-2 py-1.5 text-sm ${
+      className={`group relative flex flex-col gap-1.5 rounded-md border px-2 py-1.5 text-sm ${
         isActive ? "border-red-500/60 bg-red-500/5" : "border-border bg-card hover:bg-muted/50"
       } ${item.itemType === "section" ? "opacity-70" : "cursor-pointer"}`}
       onClick={onClick}
     >
-      <GripVerticalIcon className="size-3.5 shrink-0 text-muted-foreground" />
-      <div className="flex size-5 shrink-0 items-center justify-center rounded bg-muted text-muted-foreground">
-        {iconFor(item.itemType)}
-      </div>
-      <div className="min-w-0 flex-1 truncate"><ItemLabel item={item} /></div>
-      {isActive && <span className="text-[10px] font-medium text-red-500">Live</span>}
+      <div className="flex items-center gap-2">
+        <GripVerticalIcon className="size-3.5 shrink-0 text-muted-foreground" />
+        <div className="flex size-5 shrink-0 items-center justify-center rounded bg-muted text-muted-foreground">
+          {iconFor(item.itemType)}
+        </div>
+        <div
+          className={`min-w-0 flex-1 ${isAnnouncement ? "whitespace-pre-line break-words" : "truncate"}`}
+        >
+          <ItemLabel item={item} />
+        </div>
+        {isActive && <span className="text-[10px] font-medium text-red-500">Live</span>}
 
-      {editable && (
+        {editable && (
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-6 opacity-0 transition-opacity group-hover:opacity-100"
+            onClick={(e) => {
+              e.stopPropagation()
+              onEdit(item)
+            }}
+          >
+            <PencilIcon className="size-3" />
+          </Button>
+        )}
         <Button
           size="icon"
           variant="ghost"
           className="size-6 opacity-0 transition-opacity group-hover:opacity-100"
           onClick={(e) => {
             e.stopPropagation()
-            onEdit(item)
+            deleteItem(item.id)
           }}
         >
-          <PencilIcon className="size-3" />
+          <Trash2Icon className="size-3" />
         </Button>
-      )}
-      <Button
-        size="icon"
-        variant="ghost"
-        className="size-6 opacity-0 transition-opacity group-hover:opacity-100"
-        onClick={(e) => {
-          e.stopPropagation()
-          deleteItem(item.id)
-        }}
-      >
-        <Trash2Icon className="size-3" />
-      </Button>
+      </div>
+
+      {isAnnouncement && <AnnouncementLiveRow item={item} />}
 
       {isActive && pendingAdvanceDeadline != null && pendingAdvanceTotalMs != null && (
         <AdvanceProgressBar
@@ -111,6 +129,79 @@ export function ServicePlanItem({
           totalMs={pendingAdvanceTotalMs}
         />
       )}
+    </div>
+  )
+}
+
+/**
+ * Show Pause/Resume/Dismiss + countdown inline on an announcement plan item
+ * IFF this item is currently broadcasting. Detection matches `announcement.text`
+ * against the item's title+body concat (same shape activation-router builds).
+ */
+function AnnouncementLiveRow({ item }: { item: PlanItem }) {
+  const announcement = useBroadcastStore((s) => s.announcement)
+  const parsed = parsePlanItem(item)
+  if (!parsed || parsed.type !== "announcement" || !announcement) return null
+
+  const title = parsed.title?.trim() ?? ""
+  const body = parsed.body?.trim() ?? ""
+  const expectedText = body ? `${title}\n\n${body}` : title
+  if (announcement.text.trim() !== expectedText.trim()) return null
+
+  return (
+    <AnnouncementInlineControls announcement={announcement} />
+  )
+}
+
+function AnnouncementInlineControls({
+  announcement,
+}: {
+  announcement: NonNullable<ReturnType<typeof useBroadcastStore.getState>["announcement"]>
+}) {
+  const [now, setNow] = useState(() => Date.now())
+  const hasDuration = announcement.expiresAt != null || announcement.remainingMs != null
+  useEffect(() => {
+    if (!hasDuration) return
+    const id = window.setInterval(() => setNow(Date.now()), 250)
+    return () => window.clearInterval(id)
+  }, [hasDuration])
+
+  const remainingMs = announcement.paused
+    ? announcement.remainingMs ?? 0
+    : announcement.expiresAt
+      ? Math.max(0, announcement.expiresAt - now)
+      : null
+  const secs = remainingMs != null ? Math.ceil(remainingMs / 1000) : null
+
+  return (
+    <div
+      onClick={(e) => e.stopPropagation()}
+      className="flex items-center gap-1 self-start rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5"
+    >
+      <span className="text-[9px] font-semibold uppercase tracking-wide text-amber-400">
+        {announcement.mode === "ticker" ? "Ticker" : "Slide"}
+        {secs != null && ` · ${secs}s`}
+        {announcement.paused && " · paused"}
+      </span>
+      {hasDuration && (
+        <button
+          onClick={() => {
+            const b = useBroadcastStore.getState()
+            announcement.paused ? b.resumeAnnouncement() : b.pauseAnnouncement()
+          }}
+          className="rounded p-0.5 text-amber-400 hover:bg-amber-500/20"
+          title={announcement.paused ? "Resume announcement" : "Pause announcement"}
+        >
+          {announcement.paused ? <PlayIcon className="size-3" /> : <PauseIcon className="size-3" />}
+        </button>
+      )}
+      <button
+        onClick={() => useBroadcastStore.getState().dismissAnnouncement()}
+        className="rounded p-0.5 text-amber-400 hover:bg-destructive/30 hover:text-destructive"
+        title="Dismiss announcement"
+      >
+        <XIcon className="size-3" />
+      </button>
     </div>
   )
 }

@@ -72,6 +72,61 @@ pub fn update_session_title(
 }
 
 #[tauri::command]
+pub fn update_session_series(
+    db: State<'_, DbState>,
+    id: i64,
+    series: Option<String>,
+) -> Result<(), String> {
+    db.lock()
+        .map_err(|e| e.to_string())?
+        .update_session_series(id, series.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_session_tags(
+    db: State<'_, DbState>,
+    id: i64,
+    tags_json: String,
+) -> Result<(), String> {
+    db.lock()
+        .map_err(|e| e.to_string())?
+        .update_session_tags(id, &tags_json)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_transcript_segment(
+    db: State<'_, DbState>,
+    segment_id: i64,
+    text: String,
+) -> Result<(), String> {
+    db.lock()
+        .map_err(|e| e.to_string())?
+        .update_transcript_segment(segment_id, &text)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_transcript_segment(
+    db: State<'_, DbState>,
+    segment_id: i64,
+) -> Result<(), String> {
+    db.lock()
+        .map_err(|e| e.to_string())?
+        .delete_transcript_segment(segment_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_session_series(db: State<'_, DbState>) -> Result<Vec<String>, String> {
+    db.lock()
+        .map_err(|e| e.to_string())?
+        .list_session_series()
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn update_session_summary(
     db: State<'_, DbState>,
     id: i64,
@@ -102,6 +157,20 @@ pub fn get_session_detections(
     db.lock()
         .map_err(|e| e.to_string())?
         .get_session_detections(session_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn record_presented_verse(
+    db: State<'_, DbState>,
+    session_id: i64,
+    verse_ref: String,
+    verse_text: String,
+    translation: String,
+) -> Result<(), String> {
+    db.lock()
+        .map_err(|e| e.to_string())?
+        .record_presented_verse(session_id, &verse_ref, &verse_text, &translation)
         .map_err(|e| e.to_string())
 }
 
@@ -146,6 +215,18 @@ pub fn get_session_notes(
     db.lock()
         .map_err(|e| e.to_string())?
         .get_session_notes(session_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_session_note(
+    db: State<'_, DbState>,
+    id: i64,
+    content: String,
+) -> Result<(), String> {
+    db.lock()
+        .map_err(|e| e.to_string())?
+        .update_note(id, &content)
         .map_err(|e| e.to_string())
 }
 

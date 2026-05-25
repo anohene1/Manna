@@ -2,8 +2,14 @@ import { HYMNAL_BADGES, isHymnalSource } from "@/types"
 import type { SongSource } from "@/types"
 import { cn } from "@/lib/utils"
 
+const EXTRA_BADGES: Partial<Record<SongSource, string>> = {
+  easyworship: "EW",
+  custom: "CUSTOM",
+}
+
 export function SourceBadge({ source, className }: { source: SongSource; className?: string }) {
-  if (!isHymnalSource(source)) return null
+  const label = isHymnalSource(source) ? HYMNAL_BADGES[source] : EXTRA_BADGES[source]
+  if (!label) return null
   return (
     <span
       className={cn(
@@ -11,7 +17,7 @@ export function SourceBadge({ source, className }: { source: SongSource; classNa
         className,
       )}
     >
-      {HYMNAL_BADGES[source]}
+      {label}
     </span>
   )
 }

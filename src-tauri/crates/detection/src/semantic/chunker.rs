@@ -20,8 +20,8 @@ impl Default for Chunker {
 impl Chunker {
     pub fn new() -> Self {
         Self {
-            min_words: 5,
-            max_sentences: 2, // Reduced from 3 to limit embed() calls per transcript
+            min_words: 4,
+            max_sentences: 3, // Wider window catches longer paraphrases and joint clauses
         }
     }
 

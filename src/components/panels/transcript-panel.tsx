@@ -12,7 +12,8 @@ import {
 } from "@/stores"
 import { useTauriEvent } from "@/hooks/use-tauri-event"
 import { bibleActions } from "@/hooks/use-bible"
-import { toVerseRenderData, retranslateBroadcastVerses } from "@/hooks/use-broadcast"
+import { toVerseRenderData } from "@/hooks/use-broadcast"
+import { switchTranslation } from "@/lib/switch-translation"
 import type { TranscriptSegment } from "@/types"
 import type { DetectionResult } from "@/types"
 
@@ -87,12 +88,14 @@ export function TranscriptPanel() {
     }
   )
 
-  // Listen for voice translation commands: "read in NIV", "switch to ESV"
+  // Listen for voice translation commands: "read in NIV", "switch to ESV".
+  // Honored only in auto broadcast mode — manual mode keeps the operator in
+  // full control of translation selection.
   useTauriEvent<{ abbreviation: string; translation_id: number }>(
     "translation_command",
     (data) => {
-      useBibleStore.getState().setActiveTranslation(data.translation_id)
-      retranslateBroadcastVerses(data.translation_id, data.abbreviation).catch(() => {})
+      if (!useSettingsStore.getState().autoMode) return
+      switchTranslation(data.translation_id)
     }
   )
 

@@ -84,9 +84,12 @@ pub async fn start_osc(
         return Err("OSC listener is already running".into());
     }
 
+    // Bind to loopback by default — open Wi-Fi networks have no business
+    // sending OSC packets that flip live broadcast state. Operator can
+    // expose by editing the config explicitly if they're on a trusted LAN.
     let config = OscConfig {
         port: port.unwrap_or(8000),
-        host: "0.0.0.0".into(),
+        host: "127.0.0.1".into(),
     };
 
     let sink = Arc::new(TauriSink { app });
@@ -180,9 +183,10 @@ pub async fn start_http(
         return Err("HTTP API server is already running".into());
     }
 
+    // Bind loopback only by default. See OSC note above.
     let config = HttpConfig {
         port: port.unwrap_or(8080),
-        host: "0.0.0.0".into(),
+        host: "127.0.0.1".into(),
     };
 
     let sink = Arc::new(TauriSink { app });

@@ -14,13 +14,6 @@ import {
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Slider } from "@/components/ui/slider"
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
-import {
   Sidebar,
   SidebarContent,
   SidebarGroup,
@@ -45,7 +38,7 @@ import {
   Loader2Icon,
   XIcon,
 } from "lucide-react"
-import { useSettingsStore, persistDeepgramApiKey, persistAssemblyAiApiKey, persistClaudeApiKey, persistGeniusToken, persistEnabledHymnals, persistAutoMode, persistConfidenceThreshold, persistSttProvider } from "@/stores"
+import { useSettingsStore, persistDeepgramApiKey, persistAssemblyAiApiKey, persistClaudeApiKey, persistDeepseekApiKey, persistGeniusToken, persistEnabledHymnals, persistAutoMode, persistConfidenceThreshold, persistSttProvider, persistPexelsApiKey, persistUnsplashApiKey } from "@/stores"
 import { checkForUpdates } from "@/hooks/use-updater"
 import { HYMNAL_NAMES, HYMNAL_SOURCES } from "@/types"
 import { AudioTestPanel } from "@/components/audio-test-panel"
@@ -228,20 +221,12 @@ function SpeechSection() {
   } = useSettingsStore()
 
   const [deepgramKeyValue, setDeepgramKeyValue] = useState(deepgramApiKey ?? "")
-  const [assemblyKeyValue, setAssemblyKeyValue] = useState(assemblyAiApiKey ?? "")
-  const [savedProvider, setSavedProvider] = useState<null | "deepgram" | "assemblyai">(null)
+  const [savedProvider, setSavedProvider] = useState<null | "deepgram">(null)
   const [deepgramVerify, setDeepgramVerify] = useState<VerifyState>({ status: "idle" })
-  const [assemblyVerify, setAssemblyVerify] = useState<VerifyState>({ status: "idle" })
 
   const handleSaveDeepgramKey = () => {
     persistDeepgramApiKey(deepgramKeyValue || null)
     setSavedProvider("deepgram")
-    setTimeout(() => setSavedProvider(null), 2000)
-  }
-
-  const handleSaveAssemblyKey = () => {
-    persistAssemblyAiApiKey(assemblyKeyValue || null)
-    setSavedProvider("assemblyai")
     setTimeout(() => setSavedProvider(null), 2000)
   }
 
@@ -264,27 +249,6 @@ function SpeechSection() {
       }
     } catch (e) {
       setDeepgramVerify({ status: "fail", detail: String(e) })
-    }
-  }
-
-  const handleTestAssemblyKey = async () => {
-    if (!assemblyKeyValue.trim()) {
-      setAssemblyVerify({ status: "fail", detail: "Enter a key first." })
-      return
-    }
-    setAssemblyVerify({ status: "testing" })
-    try {
-      const result = await invoke<VerifyResult>("verify_assemblyai_key", {
-        apiKey: assemblyKeyValue,
-      })
-      if (result.ok) {
-        setAssemblyVerify({ status: "ok", detail: result.detail })
-        if (assemblyKeyValue !== assemblyAiApiKey) persistAssemblyAiApiKey(assemblyKeyValue)
-      } else {
-        setAssemblyVerify({ status: "fail", detail: result.detail })
-      }
-    } catch (e) {
-      setAssemblyVerify({ status: "fail", detail: String(e) })
     }
   }
 
@@ -428,72 +392,26 @@ function SpeechSection() {
         </div>
       )}
 
-      {/* AssemblyAI settings — show when assemblyai is selected */}
+      {/* AssemblyAI key status — configure in API Keys section */}
       {sttProvider === "assemblyai" && (
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2">
             <label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
               AssemblyAI API Key
             </label>
-            {assemblyAiApiKey && (
+            {assemblyAiApiKey ? (
               <Badge variant="outline" className="text-[0.5rem]">
                 Key configured
               </Badge>
+            ) : (
+              <Badge variant="outline" className="text-[0.5rem] text-muted-foreground">
+                Not set
+              </Badge>
             )}
           </div>
-          <div className="flex gap-2">
-            <Input
-              type="password"
-              placeholder="Enter your AssemblyAI API key..."
-              value={assemblyKeyValue}
-              onChange={(e) => {
-                setAssemblyKeyValue(e.target.value)
-                setAssemblyVerify({ status: "idle" })
-              }}
-              className="flex-1 text-xs"
-            />
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleTestAssemblyKey}
-              disabled={assemblyVerify.status === "testing"}
-            >
-              {assemblyVerify.status === "testing" ? (
-                <>
-                  <Loader2Icon className="size-3 animate-spin" />
-                  Testing…
-                </>
-              ) : (
-                "Test"
-              )}
-            </Button>
-            <Button size="sm" onClick={handleSaveAssemblyKey}>
-              {savedProvider === "assemblyai" ? (
-                <>
-                  <CheckIcon className="size-3" />
-                  Saved
-                </>
-              ) : (
-                "Save"
-              )}
-            </Button>
-          </div>
-          {assemblyVerify.status === "ok" && (
-            <p className="flex items-center gap-1.5 text-[0.625rem] text-emerald-600 dark:text-emerald-400">
-              <CheckIcon className="size-3" /> {assemblyVerify.detail}
-            </p>
-          )}
-          {assemblyVerify.status === "fail" && (
-            <p className="flex items-center gap-1.5 text-[0.625rem] text-destructive">
-              <XIcon className="size-3" /> {assemblyVerify.detail}
-            </p>
-          )}
-          {assemblyVerify.status === "idle" && (
-            <p className="text-[0.625rem] text-muted-foreground">
-              Required for live transcription. Get a key at{" "}
-              <span className="text-primary">assemblyai.com</span>
-            </p>
-          )}
+          <p className="text-[0.625rem] text-muted-foreground">
+            Required for live transcription. Configure in the API Keys section.
+          </p>
         </div>
       )}
     </div>
@@ -596,38 +514,83 @@ function DisplayModeSection() {
 /* -------------------------------------------------------------------------- */
 
 function ApiKeysSection() {
-  const { deepgramApiKey, claudeApiKey, geniusToken, sttProvider } = useSettingsStore()
+  const { deepgramApiKey, assemblyAiApiKey, deepseekApiKey, geniusToken, pexelsApiKey, unsplashApiKey, sttProvider } = useSettingsStore()
 
-  const [claudeKeyValue, setClaudeKeyValue] = useState(claudeApiKey ?? "")
-  const [claudeSaved, setClaudeSaved] = useState(false)
-  const [claudeVerify, setClaudeVerify] = useState<VerifyState>({ status: "idle" })
+  const [deepseekKeyValue, setDeepseekKeyValue] = useState(deepseekApiKey ?? "")
+  const [deepseekSaved, setDeepseekSaved] = useState(false)
+  const [deepseekVerify, setDeepseekVerify] = useState<VerifyState>({ status: "idle" })
+  const [assemblyKeyValue, setAssemblyKeyValue] = useState(assemblyAiApiKey ?? "")
+  const [assemblySaved, setAssemblySaved] = useState(false)
+  const [assemblyVerify, setAssemblyVerify] = useState<VerifyState>({ status: "idle" })
   const [geniusValue, setGeniusValue] = useState(geniusToken ?? "")
   const [geniusSaved, setGeniusSaved] = useState(false)
+  const [pexelsValue, setPexelsValue] = useState(pexelsApiKey ?? "")
+  const [pexelsSaved, setPexelsSaved] = useState(false)
+  const [unsplashValue, setUnsplashValue] = useState(unsplashApiKey ?? "")
+  const [unsplashSaved, setUnsplashSaved] = useState(false)
 
-  const handleSaveClaudeKey = () => {
-    persistClaudeApiKey(claudeKeyValue || null)
-    setClaudeSaved(true)
-    setTimeout(() => setClaudeSaved(false), 2000)
+  const handleSaveAssemblyKey = () => {
+    persistAssemblyAiApiKey(assemblyKeyValue || null)
+    setAssemblySaved(true)
+    setTimeout(() => setAssemblySaved(false), 2000)
   }
 
-  const handleTestClaudeKey = async () => {
-    if (!claudeKeyValue.trim()) {
-      setClaudeVerify({ status: "fail", detail: "Enter a key first." })
+  const handleTestAssemblyKey = async () => {
+    if (!assemblyKeyValue.trim()) {
+      setAssemblyVerify({ status: "fail", detail: "Enter a key first." })
       return
     }
-    setClaudeVerify({ status: "testing" })
+    setAssemblyVerify({ status: "testing" })
     try {
-      const result = await invoke<VerifyResult>("verify_claude_key", {
-        apiKey: claudeKeyValue,
+      const result = await invoke<VerifyResult>("verify_assemblyai_key", {
+        apiKey: assemblyKeyValue,
       })
       if (result.ok) {
-        setClaudeVerify({ status: "ok", detail: result.detail })
-        if (claudeKeyValue !== claudeApiKey) persistClaudeApiKey(claudeKeyValue)
+        setAssemblyVerify({ status: "ok", detail: result.detail })
+        if (assemblyKeyValue !== assemblyAiApiKey) persistAssemblyAiApiKey(assemblyKeyValue)
       } else {
-        setClaudeVerify({ status: "fail", detail: result.detail })
+        setAssemblyVerify({ status: "fail", detail: result.detail })
       }
     } catch (e) {
-      setClaudeVerify({ status: "fail", detail: String(e) })
+      setAssemblyVerify({ status: "fail", detail: String(e) })
+    }
+  }
+
+  const handleSavePexels = () => {
+    persistPexelsApiKey(pexelsValue || null)
+    setPexelsSaved(true)
+    setTimeout(() => setPexelsSaved(false), 2000)
+  }
+  const handleSaveUnsplash = () => {
+    persistUnsplashApiKey(unsplashValue || null)
+    setUnsplashSaved(true)
+    setTimeout(() => setUnsplashSaved(false), 2000)
+  }
+
+  const handleSaveDeepseekKey = () => {
+    persistDeepseekApiKey(deepseekKeyValue || null)
+    setDeepseekSaved(true)
+    setTimeout(() => setDeepseekSaved(false), 2000)
+  }
+
+  const handleTestDeepseekKey = async () => {
+    if (!deepseekKeyValue.trim()) {
+      setDeepseekVerify({ status: "fail", detail: "Enter a key first." })
+      return
+    }
+    setDeepseekVerify({ status: "testing" })
+    try {
+      const result = await invoke<VerifyResult>("verify_deepseek_key", {
+        apiKey: deepseekKeyValue,
+      })
+      if (result.ok) {
+        setDeepseekVerify({ status: "ok", detail: result.detail })
+        if (deepseekKeyValue !== deepseekApiKey) persistDeepseekApiKey(deepseekKeyValue)
+      } else {
+        setDeepseekVerify({ status: "fail", detail: result.detail })
+      }
+    } catch (e) {
+      setDeepseekVerify({ status: "fail", detail: String(e) })
     }
   }
 
@@ -663,13 +626,13 @@ function ApiKeysSection() {
         </p>
       </div>
 
-      {/* Claude API Key */}
+      {/* AssemblyAI API Key */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-2">
           <label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            Claude API Key
+            AssemblyAI API Key
           </label>
-          {claudeApiKey ? (
+          {assemblyAiApiKey ? (
             <Badge variant="outline" className="text-[0.5rem]">
               Key configured
             </Badge>
@@ -682,24 +645,31 @@ function ApiKeysSection() {
         <div className="flex gap-2">
           <Input
             type="password"
-            placeholder="Enter your Claude API key..."
-            value={claudeKeyValue}
+            placeholder="Enter your AssemblyAI API key..."
+            value={assemblyKeyValue}
             onChange={(e) => {
-              setClaudeKeyValue(e.target.value)
-              setClaudeVerify({ status: "idle" })
+              setAssemblyKeyValue(e.target.value)
+              setAssemblyVerify({ status: "idle" })
             }}
             className="flex-1 text-xs"
           />
           <Button
             size="sm"
             variant="outline"
-            onClick={handleTestClaudeKey}
-            disabled={claudeVerify.status === "testing"}
+            onClick={handleTestAssemblyKey}
+            disabled={assemblyVerify.status === "testing"}
           >
-            {claudeVerify.status === "testing" ? "Testing…" : "Test"}
+            {assemblyVerify.status === "testing" ? (
+              <>
+                <Loader2Icon className="size-3 animate-spin" />
+                Testing…
+              </>
+            ) : (
+              "Test"
+            )}
           </Button>
-          <Button size="sm" onClick={handleSaveClaudeKey}>
-            {claudeSaved ? (
+          <Button size="sm" onClick={handleSaveAssemblyKey}>
+            {assemblySaved ? (
               <>
                 <CheckIcon className="size-3" />
                 Saved
@@ -709,15 +679,79 @@ function ApiKeysSection() {
             )}
           </Button>
         </div>
-        {claudeVerify.status === "ok" && (
-          <p className="text-[0.625rem] text-emerald-500">{claudeVerify.detail}</p>
+        {assemblyVerify.status === "ok" && (
+          <p className="flex items-center gap-1.5 text-[0.625rem] text-emerald-600 dark:text-emerald-400">
+            <CheckIcon className="size-3" /> {assemblyVerify.detail}
+          </p>
         )}
-        {claudeVerify.status === "fail" && (
-          <p className="text-[0.625rem] text-destructive">{claudeVerify.detail}</p>
+        {assemblyVerify.status === "fail" && (
+          <p className="flex items-center gap-1.5 text-[0.625rem] text-destructive">
+            <XIcon className="size-3" /> {assemblyVerify.detail}
+          </p>
+        )}
+        {assemblyVerify.status === "idle" && (
+          <p className="text-[0.625rem] text-muted-foreground">
+            Required for live transcription when AssemblyAI is selected. Get a key at{" "}
+            <span className="text-primary">assemblyai.com</span>
+          </p>
+        )}
+      </div>
+
+      {/* DeepSeek API Key */}
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            DeepSeek API Key
+          </label>
+          {deepseekApiKey ? (
+            <Badge variant="outline" className="text-[0.5rem]">
+              Key configured
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-[0.5rem] text-muted-foreground">
+              Not set
+            </Badge>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <Input
+            type="password"
+            placeholder="Enter your DeepSeek API key..."
+            value={deepseekKeyValue}
+            onChange={(e) => {
+              setDeepseekKeyValue(e.target.value)
+              setDeepseekVerify({ status: "idle" })
+            }}
+            className="flex-1 text-xs"
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleTestDeepseekKey}
+            disabled={deepseekVerify.status === "testing"}
+          >
+            {deepseekVerify.status === "testing" ? "Testing…" : "Test"}
+          </Button>
+          <Button size="sm" onClick={handleSaveDeepseekKey}>
+            {deepseekSaved ? (
+              <>
+                <CheckIcon className="size-3" />
+                Saved
+              </>
+            ) : (
+              "Save"
+            )}
+          </Button>
+        </div>
+        {deepseekVerify.status === "ok" && (
+          <p className="text-[0.625rem] text-emerald-500">{deepseekVerify.detail}</p>
+        )}
+        {deepseekVerify.status === "fail" && (
+          <p className="text-[0.625rem] text-destructive">{deepseekVerify.detail}</p>
         )}
         <p className="text-[0.625rem] text-muted-foreground">
           Used for AI sermon summaries. Get a key at{" "}
-          <span className="text-primary">console.anthropic.com</span>
+          <span className="text-primary">platform.deepseek.com</span>
         </p>
       </div>
 
@@ -759,6 +793,64 @@ function ApiKeysSection() {
         <p className="text-[0.625rem] text-muted-foreground">
           Optional — enables song lookup via Genius. Create a token at{" "}
           <span className="text-primary">genius.com/api-clients</span>
+        </p>
+      </div>
+
+      {/* Pexels API Key */}
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            Pexels API Key
+          </label>
+          {pexelsApiKey ? (
+            <Badge variant="outline" className="text-[0.5rem]">Key configured</Badge>
+          ) : (
+            <Badge variant="outline" className="text-[0.5rem] text-muted-foreground">Not set</Badge>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <Input
+            type="password"
+            placeholder="Paste Pexels API key..."
+            value={pexelsValue}
+            onChange={(e) => setPexelsValue(e.target.value)}
+            className="flex-1 text-xs"
+          />
+          <Button size="sm" onClick={handleSavePexels}>
+            {pexelsSaved ? (<><CheckIcon className="size-3" />Saved</>) : "Save"}
+          </Button>
+        </div>
+        <p className="text-[0.625rem] text-muted-foreground">
+          Free image search. Sign up at <span className="text-primary">pexels.com/api</span>
+        </p>
+      </div>
+
+      {/* Unsplash API Key */}
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            Unsplash API Key
+          </label>
+          {unsplashApiKey ? (
+            <Badge variant="outline" className="text-[0.5rem]">Key configured</Badge>
+          ) : (
+            <Badge variant="outline" className="text-[0.5rem] text-muted-foreground">Not set</Badge>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <Input
+            type="password"
+            placeholder="Paste Unsplash Access Key..."
+            value={unsplashValue}
+            onChange={(e) => setUnsplashValue(e.target.value)}
+            className="flex-1 text-xs"
+          />
+          <Button size="sm" onClick={handleSaveUnsplash}>
+            {unsplashSaved ? (<><CheckIcon className="size-3" />Saved</>) : "Save"}
+          </Button>
+        </div>
+        <p className="text-[0.625rem] text-muted-foreground">
+          Free image search. Sign up at <span className="text-primary">unsplash.com/developers</span>
         </p>
       </div>
     </div>
@@ -814,20 +906,10 @@ function BibleSection() {
     load()
   }, [])
 
-  const handleChange = async (value: string) => {
+  const handleChange = (value: string) => {
     const id = parseInt(value)
-    try {
-      await invoke("set_active_translation", { translationId: id })
-      setActiveId(id)
-      // Update frontend stores so all panels use the new translation
-      const { useBibleStore } = await import("@/stores")
-      useBibleStore.getState().setActiveTranslation(id)
-      const abbr = useBibleStore.getState().translations.find(t => t.id === id)?.abbreviation ?? ""
-      const { retranslateBroadcastVerses } = await import("@/hooks/use-broadcast")
-      await retranslateBroadcastVerses(id, abbr)
-    } catch (e) {
-      console.error("Failed to set translation:", e)
-    }
+    setActiveId(id)
+    void import("@/lib/switch-translation").then(({ switchTranslation }) => switchTranslation(id))
   }
 
   const englishTranslations = translations.filter((t) => t.language === "en")
@@ -1356,69 +1438,77 @@ export function SettingsDialog() {
   const open = useSettingsDialogStore((s) => s.isOpen)
   const activeSection = useSettingsDialogStore((s) => s.activeSection)
   const setActiveSection = useSettingsDialogStore((s) => s.setActiveSection)
-  const openSettingsFn = useSettingsDialogStore((s) => s.openSettings)
   const closeSettings = useSettingsDialogStore((s) => s.closeSettings)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault()
+        closeSettings()
+      }
+    }
+    window.addEventListener("keydown", handler)
+    return () => window.removeEventListener("keydown", handler)
+  }, [open, closeSettings])
+
+  if (!open) return null
 
   const ActiveContent = sectionComponents[activeSection]
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (nextOpen) {
-          openSettingsFn()
-        } else {
-          closeSettings()
-        }
-      }}
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Settings"
+      className="fixed inset-0 z-50 flex flex-col bg-background animate-in fade-in-0 duration-150"
     >
-      <DialogTrigger asChild>
-        <Button variant="ghost" size="icon-sm" data-tour="settings">
-          <SettingsIcon className="size-3.5" />
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="overflow-hidden p-0 md:max-h-[600px] md:max-w-[800px] lg:max-w-[900px]">
-        <DialogTitle className="sr-only">Settings</DialogTitle>
-        <DialogDescription className="sr-only">
-          Configure audio, display mode, and API keys.
-        </DialogDescription>
-        <SidebarProvider className="items-start">
-          <Sidebar collapsible="none" className="hidden md:flex">
-            <div className="h-14 border-b border-border border-r px-4 flex items-center" >
-              Settings
+      <SidebarProvider className="items-start flex-1 min-h-0">
+        <Sidebar collapsible="none" className="hidden md:flex h-full w-64 shrink-0">
+          <div className="h-14 border-b border-border border-r px-4 flex items-center font-medium text-sm">
+            Settings
+          </div>
+          <SidebarContent className="border-r border-border">
+            <SidebarGroup>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {navItems.map((item) => (
+                    <SidebarMenuItem key={item.id}>
+                      <SidebarMenuButton
+                        isActive={item.id === activeSection}
+                        onClick={() => setActiveSection(item.id)}
+                      >
+                        {item.icon}
+                        <span>{item.name}</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </SidebarContent>
+        </Sidebar>
+        <main className="flex h-full flex-1 flex-col overflow-hidden">
+          <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border px-6">
+            <div className="text-sm font-medium">
+              {sectionTitles[activeSection]}
             </div>
-            <SidebarContent className="border-r border-border">
-              <SidebarGroup>
-                <SidebarGroupContent>
-                  <SidebarMenu>
-                    {navItems.map((item) => (
-                      <SidebarMenuItem key={item.id}>
-                        <SidebarMenuButton
-                          isActive={item.id === activeSection}
-                          onClick={() => setActiveSection(item.id)}
-                        >
-                          {item.icon}
-                          <span>{item.name}</span>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    ))}
-                  </SidebarMenu>
-                </SidebarGroupContent>
-              </SidebarGroup>
-            </SidebarContent>
-          </Sidebar>
-          <main className="flex h-[580px] flex-1 flex-col overflow-hidden">
-            <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border">
-              <div className="flex items-center gap-2 px-4">
-                {sectionTitles[activeSection]}
-              </div>
-            </header>
-            <div className="flex flex-1 flex-col overflow-y-auto p-4">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={closeSettings}
+              aria-label="Close settings"
+            >
+              <XIcon className="size-4" />
+            </Button>
+          </header>
+          <div className="flex flex-1 flex-col overflow-y-auto">
+            <div className="mx-auto w-full max-w-3xl p-8">
               <ActiveContent />
             </div>
-          </main>
-        </SidebarProvider>
-      </DialogContent>
-    </Dialog>
+          </div>
+        </main>
+      </SidebarProvider>
+    </div>
   )
 }

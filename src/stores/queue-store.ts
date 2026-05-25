@@ -19,6 +19,8 @@ interface QueueState {
   jumpLiveSong: (songId: string) => void
   jumpToSongNumber: (num: number) => void
   presentSongLive: (songId: string) => void
+  enqueueImage: (input: { url: string; label: string; thumbnailUrl?: string; provider: "pexels" | "unsplash" | "local" }) => void
+  presentImageLive: (input: { url: string; label: string; thumbnailUrl?: string; provider: "pexels" | "unsplash" | "local" }) => void
 }
 
 function stanzaIndexById(song: Song, stanzaId: string): number {
@@ -115,6 +117,29 @@ export const useQueueStore = create<QueueState>((set, get) => ({
       .songs.find((s) => s.source === "ghs" && s.number === num)
     if (!song) return
     get().presentSongLive(song.id)
+  },
+
+  enqueueImage: ({ url, label, thumbnailUrl, provider }) => {
+    const item: QueueItem = {
+      kind: "image",
+      id: `image-q-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      source: "manual",
+      added_at: Date.now(),
+      url,
+      label,
+      thumbnailUrl,
+      provider,
+    }
+    set((s) => ({ items: [...s.items, item] }))
+  },
+
+  presentImageLive: ({ url, label, thumbnailUrl, provider }) => {
+    get().enqueueImage({ url, label, thumbnailUrl, provider })
+    const idx = get().items.length - 1
+    set({ activeIndex: idx })
+    void import("./broadcast-store").then(({ useBroadcastStore }) => {
+      useBroadcastStore.getState().setFullscreenImage({ url, label })
+    })
   },
 
   presentSongLive: (songId) => {

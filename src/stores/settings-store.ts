@@ -7,7 +7,11 @@ interface SettingsState {
   deepgramApiKey: string | null
   assemblyAiApiKey: string | null
   claudeApiKey: string | null
+  deepseekApiKey: string | null
   geniusToken: string | null
+  pexelsApiKey: string | null
+  unsplashApiKey: string | null
+  localImageFolder: string | null
   activeTranslationId: number
   audioDeviceId: string | null
   gain: number
@@ -21,7 +25,11 @@ interface SettingsState {
   setDeepgramApiKey: (key: string | null) => void
   setAssemblyAiApiKey: (key: string | null) => void
   setClaudeApiKey: (key: string | null) => void
+  setDeepseekApiKey: (key: string | null) => void
   setGeniusToken: (token: string | null) => void
+  setPexelsApiKey: (key: string | null) => void
+  setUnsplashApiKey: (key: string | null) => void
+  setLocalImageFolder: (path: string | null) => void
   setActiveTranslationId: (id: number) => void
   setAudioDeviceId: (id: string | null) => void
   setGain: (gain: number) => void
@@ -37,7 +45,11 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   deepgramApiKey: null,
   assemblyAiApiKey: null,
   claudeApiKey: null,
+  deepseekApiKey: null,
   geniusToken: null,
+  pexelsApiKey: null,
+  unsplashApiKey: null,
+  localImageFolder: null,
   activeTranslationId: 1,
   audioDeviceId: null,
   gain: 1.0,
@@ -51,7 +63,11 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setDeepgramApiKey: (deepgramApiKey) => set({ deepgramApiKey }),
   setAssemblyAiApiKey: (assemblyAiApiKey) => set({ assemblyAiApiKey }),
   setClaudeApiKey: (claudeApiKey) => set({ claudeApiKey }),
+  setDeepseekApiKey: (deepseekApiKey) => set({ deepseekApiKey }),
   setGeniusToken: (geniusToken) => set({ geniusToken }),
+  setPexelsApiKey: (pexelsApiKey) => set({ pexelsApiKey }),
+  setUnsplashApiKey: (unsplashApiKey) => set({ unsplashApiKey }),
+  setLocalImageFolder: (localImageFolder) => set({ localImageFolder }),
   setActiveTranslationId: (activeTranslationId) => set({ activeTranslationId }),
   setAudioDeviceId: (audioDeviceId) => set({ audioDeviceId }),
   setGain: (gain) => set({ gain }),
@@ -82,7 +98,11 @@ export async function hydrateSettings(): Promise<void> {
       deepgramApiKey,
       assemblyAiApiKey,
       claudeApiKey,
+      deepseekApiKey,
       geniusToken,
+      pexelsApiKey,
+      unsplashApiKey,
+      localImageFolder,
       sttProvider,
       onboardingComplete,
       gain,
@@ -95,7 +115,11 @@ export async function hydrateSettings(): Promise<void> {
       store.get<string>("deepgramApiKey"),
       store.get<string>("assemblyAiApiKey"),
       store.get<string>("claudeApiKey"),
+      store.get<string>("deepseekApiKey"),
       store.get<string>("geniusToken"),
+      store.get<string>("pexelsApiKey"),
+      store.get<string>("unsplashApiKey"),
+      store.get<string>("localImageFolder"),
       store.get<SttProvider>("sttProvider"),
       store.get<boolean>("onboardingComplete"),
       store.get<number>("gain"),
@@ -110,7 +134,11 @@ export async function hydrateSettings(): Promise<void> {
     if (deepgramApiKey) s.setDeepgramApiKey(deepgramApiKey)
     if (assemblyAiApiKey) s.setAssemblyAiApiKey(assemblyAiApiKey)
     if (claudeApiKey) s.setClaudeApiKey(claudeApiKey)
+    if (deepseekApiKey) s.setDeepseekApiKey(deepseekApiKey)
     if (geniusToken) s.setGeniusToken(geniusToken)
+    if (pexelsApiKey) s.setPexelsApiKey(pexelsApiKey)
+    if (unsplashApiKey) s.setUnsplashApiKey(unsplashApiKey)
+    if (localImageFolder) s.setLocalImageFolder(localImageFolder)
     if (sttProvider) s.setSttProvider(sttProvider)
     if (onboardingComplete) s.setOnboardingComplete(true)
     if (gain != null) s.setGain(gain)
@@ -212,6 +240,21 @@ export async function persistClaudeApiKey(key: string | null): Promise<void> {
   }
 }
 
+/** Persist the DeepSeek API key to disk. */
+export async function persistDeepseekApiKey(key: string | null): Promise<void> {
+  useSettingsStore.getState().setDeepseekApiKey(key)
+  try {
+    const store = await getStore()
+    if (key) {
+      await store.set("deepseekApiKey", key)
+    } else {
+      await store.delete("deepseekApiKey")
+    }
+  } catch {
+    console.warn("[settings] Failed to persist DeepSeek API key")
+  }
+}
+
 /** Persist the Genius API token to disk. */
 export async function persistGeniusToken(token: string | null): Promise<void> {
   useSettingsStore.getState().setGeniusToken(token)
@@ -224,6 +267,42 @@ export async function persistGeniusToken(token: string | null): Promise<void> {
     }
   } catch {
     console.warn("[settings] Failed to persist Genius token")
+  }
+}
+
+/** Persist Pexels API key to disk. */
+export async function persistPexelsApiKey(key: string | null): Promise<void> {
+  useSettingsStore.getState().setPexelsApiKey(key)
+  try {
+    const store = await getStore()
+    if (key) await store.set("pexelsApiKey", key)
+    else await store.delete("pexelsApiKey")
+  } catch {
+    console.warn("[settings] Failed to persist Pexels API key")
+  }
+}
+
+/** Persist Unsplash API key to disk. */
+export async function persistUnsplashApiKey(key: string | null): Promise<void> {
+  useSettingsStore.getState().setUnsplashApiKey(key)
+  try {
+    const store = await getStore()
+    if (key) await store.set("unsplashApiKey", key)
+    else await store.delete("unsplashApiKey")
+  } catch {
+    console.warn("[settings] Failed to persist Unsplash API key")
+  }
+}
+
+/** Persist local image folder path to disk. */
+export async function persistLocalImageFolder(path: string | null): Promise<void> {
+  useSettingsStore.getState().setLocalImageFolder(path)
+  try {
+    const store = await getStore()
+    if (path) await store.set("localImageFolder", path)
+    else await store.delete("localImageFolder")
+  } catch {
+    console.warn("[settings] Failed to persist local image folder")
   }
 }
 

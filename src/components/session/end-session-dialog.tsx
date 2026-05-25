@@ -10,6 +10,7 @@ import {
 import { useEndSessionDialogStore } from "@/lib/end-session-dialog"
 import { useSession } from "@/hooks/use-session"
 import { useSessionStore } from "@/stores"
+import { generateAndPersistSummary } from "@/lib/summarize"
 
 export function EndSessionDialog() {
   const { isOpen, sessionId, closeEndSession } = useEndSessionDialogStore()
@@ -22,10 +23,23 @@ export function EndSessionDialog() {
     setIsEnding(true)
     try {
       const updated = await endSession(sessionId)
-      if (summary.trim()) {
-        await updateSummary(sessionId, summary.trim())
+      const manualSummary = summary.trim()
+      if (manualSummary) {
+        await updateSummary(sessionId, manualSummary)
+      } else {
+        // Fire-and-forget AI summary so the dialog closes immediately.
+        // Result lands in the session's `summary` column when ready.
+        void generateAndPersistSummary(sessionId)
       }
       useSessionStore.getState().setActiveSession(updated)
+
+      // Open Sessions Mode + jump directly to this session's Summary tab.
+      useSessionStore.getState().openSessionInMode({
+        id: sessionId,
+        title: updated.title,
+        tab: "summary",
+      })
+
       setSummary("")
       closeEndSession()
     } finally {
@@ -45,7 +59,7 @@ export function EndSessionDialog() {
 
         <div className="space-y-2">
           <label className="text-sm font-medium">
-            Summary <span className="text-muted-foreground">(optional)</span>
+            Summary <span className="text-muted-foreground">(optional — auto-generated if blank)</span>
           </label>
           <textarea
             className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -54,6 +68,9 @@ export function EndSessionDialog() {
             value={summary}
             onChange={(e) => setSummary(e.target.value)}
           />
+          <p className="text-[10px] text-muted-foreground">
+            Leave blank to auto-generate an AI summary in the background.
+          </p>
         </div>
 
         <DialogFooter>

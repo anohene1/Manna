@@ -18,9 +18,12 @@ pub struct OscConfig {
 
 impl Default for OscConfig {
     fn default() -> Self {
+        // Loopback-only — OSC packets on an open Wi-Fi network have no
+        // business flipping live broadcast state. Operators on trusted LANs
+        // can override `host` explicitly.
         Self {
             port: 8000,
-            host: "0.0.0.0".into(),
+            host: "127.0.0.1".into(),
         }
     }
 }

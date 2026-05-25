@@ -24,27 +24,29 @@ export function wrapText(
   text: string,
   maxWidth: number,
 ): string[] {
-  const words = text.split(" ")
-  const lines: string[] = []
-  let currentLine = ""
+  const out: string[] = []
 
-  for (const word of words) {
-    const testLine = currentLine ? `${currentLine} ${word}` : word
-    const metrics = ctx.measureText(testLine)
-
-    if (metrics.width > maxWidth && currentLine) {
-      lines.push(currentLine)
-      currentLine = word
-    } else {
-      currentLine = testLine
+  for (const paragraph of text.split("\n")) {
+    const words = paragraph.split(/\s+/).filter(Boolean)
+    if (words.length === 0) {
+      out.push("")
+      continue
     }
+    let currentLine = ""
+    for (const word of words) {
+      const testLine = currentLine ? `${currentLine} ${word}` : word
+      const metrics = ctx.measureText(testLine)
+      if (metrics.width > maxWidth && currentLine) {
+        out.push(currentLine)
+        currentLine = word
+      } else {
+        currentLine = testLine
+      }
+    }
+    if (currentLine) out.push(currentLine)
   }
 
-  if (currentLine) {
-    lines.push(currentLine)
-  }
-
-  return lines
+  return out
 }
 
 function alignX(

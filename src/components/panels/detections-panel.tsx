@@ -55,30 +55,57 @@ function DetectionCard({ detection }: { detection: DetectionResult }) {
 
   if (verseInvalid) return null
 
-  const handleSendToScreen = () => {
-    const verse = {
-      id: 0,
-      translation_id: 1,
-      book_number: detection.book_number,
-      book_name: detection.book_name,
-      book_abbreviation: "",
-      chapter: detection.chapter,
-      verse: detection.verse,
-      text: verseText,
-    }
+  const verseFromDetection = () => ({
+    id: 0,
+    translation_id: 1,
+    book_number: detection.book_number,
+    book_name: detection.book_name,
+    book_abbreviation: "",
+    chapter: detection.chapter,
+    verse: detection.verse,
+    text: verseText,
+  })
+
+  const navigateAndSelect = () => {
+    const verse = verseFromDetection()
     bibleActions.selectVerse(verse)
     if (detection.book_number > 0) {
       bibleActions.navigateToVerse(detection.book_number, detection.chapter, detection.verse)
     }
-    // Send to preview monitor (not live yet — user clicks "Go Live" to push to screen)
+    return verse
+  }
+
+  const previewDetection = () => {
+    const verse = navigateAndSelect()
     const translation = useBibleStore.getState().translations
       .find(t => t.id === useBibleStore.getState().activeTranslationId)?.abbreviation ?? "KJV"
     useBroadcastStore.getState().setPreviewVerse(toVerseRenderData(verse, translation))
   }
 
+  const goLiveDetection = () => {
+    if (isThisLive) return
+    const verse = navigateAndSelect()
+    const translation = useBibleStore.getState().translations
+      .find(t => t.id === useBibleStore.getState().activeTranslationId)?.abbreviation ?? "KJV"
+    useBroadcastStore.getState().setLiveVerse(toVerseRenderData(verse, translation))
+  }
+
   return (
     <div className="p-1.5">
-    <div className={`rounded-xl border p-3 ${isThisLive ? "border-red-500/50 bg-red-500/5" : "border-border bg-surface-elevated"}`}>
+    <div
+      onClick={previewDetection}
+      onDoubleClick={goLiveDetection}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          if (e.shiftKey || e.metaKey || e.ctrlKey) goLiveDetection()
+          else previewDetection()
+        }
+      }}
+      title="Click to preview · Double-click to go live"
+      className={`cursor-pointer select-none rounded-xl border p-3 transition-colors hover:border-primary/40 hover:bg-card/80 active:scale-[0.99] ${isThisLive ? "border-red-500/50 bg-red-500/5" : "border-border bg-surface-elevated"}`}
+    >
       <div className="flex items-center gap-2">
         <ConfidenceDot confidence={detection.confidence} />
         <SourceBadge source={detection.source} />
@@ -106,23 +133,9 @@ function DetectionCard({ detection }: { detection: DetectionResult }) {
         <Button
           size="xs"
           className={`gap-1 rounded-full px-2.5 text-[10px] ${isThisLive ? "bg-red-600 text-white hover:bg-red-700" : ""}`}
-          onClick={() => {
-            if (!isThisLive) {
-              const verse = {
-                id: 0, translation_id: 1,
-                book_number: detection.book_number, book_name: detection.book_name,
-                book_abbreviation: "", chapter: detection.chapter,
-                verse: detection.verse, text: detection.verse_text,
-              }
-              bibleActions.selectVerse(verse)
-              if (detection.book_number > 0) {
-                bibleActions.navigateToVerse(detection.book_number, detection.chapter, detection.verse)
-              }
-              const translation = useBibleStore.getState().translations
-                .find(t => t.id === useBibleStore.getState().activeTranslationId)?.abbreviation ?? "KJV"
-              // Go directly to live — skip preview to avoid race condition
-              useBroadcastStore.getState().setLiveVerse(toVerseRenderData(verse, translation))
-            }
+          onClick={(e) => {
+            e.stopPropagation()
+            goLiveDetection()
           }}
         >
           {isThisLive ? (
@@ -141,17 +154,9 @@ function DetectionCard({ detection }: { detection: DetectionResult }) {
           variant="outline"
           size="xs"
           className="gap-1 rounded-full px-2.5 text-[10px]"
-          onClick={() => {
-            const verse = {
-              id: 0,
-              translation_id: 1,
-              book_number: detection.book_number,
-              book_name: detection.book_name,
-              book_abbreviation: "",
-              chapter: detection.chapter,
-              verse: detection.verse,
-              text: verseText,
-            }
+          onClick={(e) => {
+            e.stopPropagation()
+            const verse = verseFromDetection()
             const wasEmpty = useQueueStore.getState().items.length === 0
             useQueueStore.getState().addItem({
               kind: "verse",

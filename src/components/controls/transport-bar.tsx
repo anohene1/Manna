@@ -2,11 +2,11 @@ import { useState } from "react"
 import { LevelMeter } from "@/components/ui/level-meter"
 import { LiveIndicator } from "@/components/ui/live-indicator"
 import { Badge } from "@/components/ui/badge"
-import { MicIcon, PaletteIcon, CastIcon, SunIcon, MoonIcon } from "lucide-react"
+import { MicIcon, PaletteIcon, CastIcon, SunIcon, MoonIcon, SettingsIcon, ArchiveIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { SettingsDialog } from "@/components/settings-dialog"
+import { openSettings } from "@/lib/settings-dialog"
 import { BroadcastSettings } from "@/components/broadcast/broadcast-settings"
-import { useAudioStore, useTranscriptStore, useBroadcastStore } from "@/stores"
+import { useAudioStore, useTranscriptStore, useBroadcastStore, useSessionStore } from "@/stores"
 import { useTheme } from "@/components/theme-provider"
 
 export function TransportBar() {
@@ -62,13 +62,29 @@ export function TransportBar() {
         <Button
           variant="ghost"
           size="icon-sm"
+          title="Sessions"
+          onClick={() => useSessionStore.getState().openSessions()}
+        >
+          <ArchiveIcon className="size-3.5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
           title="Theme Designer"
           data-tour="theme"
           onClick={() => useBroadcastStore.getState().setDesignerOpen(true)}
         >
           <PaletteIcon className="size-3.5" />
         </Button>
-        <SettingsDialog />
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          title="Settings"
+          data-tour="settings"
+          onClick={() => openSettings()}
+        >
+          <SettingsIcon className="size-3.5" />
+        </Button>
       </div>
     </div>
   )

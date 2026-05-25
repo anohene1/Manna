@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react"
 import { invoke } from "@tauri-apps/api/core"
+import { Trash2Icon } from "lucide-react"
 import { useSession } from "@/hooks/use-session"
 import { useSessionStore } from "@/stores"
+import type { PendingSessionTab } from "@/stores/session-store"
 import type { SermonSession, CreateSessionRequest } from "@/types/session"
 import { SessionDetail } from "./session-detail"
 
@@ -82,12 +84,14 @@ function SessionRow({
   onClick,
   onContextMenu,
   onTitleChange,
+  onDelete,
 }: {
   session: SermonSession
   isActive: boolean
   onClick: () => void
   onContextMenu: (e: React.MouseEvent) => void
   onTitleChange: (newTitle: string) => void
+  onDelete: () => void
 }) {
   const [editing, setEditing] = useState(false)
   const [editTitle, setEditTitle] = useState(session.title)
@@ -109,10 +113,15 @@ function SessionRow({
   }
 
   return (
-    <button
-      className={`flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm transition-colors hover:bg-muted/50 ${isActive ? "bg-muted" : ""}`}
+    <div
+      role="button"
+      tabIndex={0}
+      className={`group flex w-full cursor-pointer items-center gap-3 px-3 py-2.5 text-left text-sm transition-colors hover:bg-muted/50 ${isActive ? "bg-muted" : ""}`}
       onClick={onClick}
       onContextMenu={onContextMenu}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") onClick()
+      }}
     >
       <div className="min-w-0 flex-1">
         {editing ? (
@@ -146,16 +155,32 @@ function SessionRow({
       >
         {session.status}
       </span>
-    </button>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          if (confirm(`Delete "${session.title}"? This cannot be undone.`)) {
+            onDelete()
+          }
+        }}
+        title="Delete session"
+        className="shrink-0 rounded-md p-1 text-muted-foreground/50 opacity-0 transition-all hover:bg-destructive/15 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
+      >
+        <Trash2Icon className="size-3.5" />
+      </button>
+    </div>
   )
 }
 
 export function SessionsPanel() {
   const { listSessions } = useSession()
   const activeSession = useSessionStore((s) => s.activeSession)
+  const pendingView = useSessionStore((s) => s.sessionsView)
+  const clearPendingView = useSessionStore((s) => s.clearSessionInMode)
   const [sessions, setSessions] = useState<SermonSession[]>([])
   const [viewingSessionId, setViewingSessionId] = useState<number | null>(null)
   const [viewingSessionTitle, setViewingSessionTitle] = useState("")
+  const [viewingSessionTab, setViewingSessionTab] = useState<PendingSessionTab | undefined>(undefined)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; sessionId: number } | null>(null)
 
   function loadSessions() {
@@ -170,12 +195,25 @@ export function SessionsPanel() {
     loadSessions()
   }, [])
 
+  // Honor cross-component "view this session" signal (e.g. fired by End Session)
+  useEffect(() => {
+    if (!pendingView) return
+    setViewingSessionId(pendingView.id)
+    setViewingSessionTitle(pendingView.title)
+    setViewingSessionTab(pendingView.tab)
+    clearPendingView()
+  }, [pendingView, clearPendingView])
+
   if (viewingSessionId) {
     return (
       <SessionDetail
         sessionId={viewingSessionId}
         sessionTitle={viewingSessionTitle}
-        onBack={() => setViewingSessionId(null)}
+        initialTab={viewingSessionTab}
+        onBack={() => {
+          setViewingSessionId(null)
+          setViewingSessionTab(undefined)
+        }}
       />
     )
   }
@@ -207,6 +245,17 @@ export function SessionsPanel() {
               onContextMenu={(e) => {
                 e.preventDefault()
                 setContextMenu({ x: e.clientX, y: e.clientY, sessionId: session.id })
+              }}
+              onDelete={async () => {
+                try {
+                  await invoke("delete_session", { id: session.id })
+                  if (useSessionStore.getState().activeSession?.id === session.id) {
+                    useSessionStore.getState().setActiveSession(null)
+                  }
+                  loadSessions()
+                } catch (e) {
+                  console.error("Failed to delete session:", e)
+                }
               }}
             />
           ))

@@ -8,6 +8,14 @@ export interface VerseRenderData {
   segments: VerseSegment[]
 }
 
+export interface NotesSlide {
+  /** Source plan item — lets the selection drawer detect "is mine live?" */
+  planItemId: number
+  /** Optional header text. Empty string → no header rendered. */
+  title: string
+  bullets: Array<{ id: number; markdown: string }>
+}
+
 export interface RenderOptions {
   opacity?: number
   offsetX?: number

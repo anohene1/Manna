@@ -1,12 +1,12 @@
 import { useState } from "react"
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -79,7 +79,7 @@ export function PasteLyricsDialog({
       stanzas,
       chorus: null,
       autoChorus: false,
-      lineMode: "stanza-full",
+      lineMode: "stanza-pair",
       tune: null,
       meter: null,
       scriptureRef: null,
@@ -98,16 +98,16 @@ export function PasteLyricsDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>New Song</DialogTitle>
-          <DialogDescription>
+    <Drawer open={open} onOpenChange={handleOpenChange}>
+      <DrawerContent className="left-1/2 right-auto max-h-[85vh] w-full max-w-2xl -translate-x-1/2">
+        <DrawerHeader>
+          <DrawerTitle>New Song</DrawerTitle>
+          <DrawerDescription>
             Paste lyrics below. Separate stanzas with blank lines.
-          </DialogDescription>
-        </DialogHeader>
+          </DrawerDescription>
+        </DrawerHeader>
 
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 overflow-y-auto px-4 pb-2">
           <div className="flex flex-col gap-1.5">
             <label
               htmlFor="paste-lyrics-title"
@@ -162,7 +162,7 @@ export function PasteLyricsDialog({
           )}
         </div>
 
-        <DialogFooter>
+        <DrawerFooter className="flex flex-row justify-end gap-2">
           <Button
             variant="outline"
             onClick={() => handleOpenChange(false)}
@@ -173,8 +173,8 @@ export function PasteLyricsDialog({
           <Button onClick={handleSave} disabled={!canSave}>
             {saving ? "Saving..." : "Save"}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </DrawerFooter>
+      </DrawerContent>
+    </Drawer>
   )
 }

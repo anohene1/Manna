@@ -1,4 +1,6 @@
-import { useEffect } from "react"
+import { useEffect, useRef, useState } from "react"
+import { toast } from "sonner"
+import { Wand2Icon, Undo2Icon } from "lucide-react"
 import {
   Drawer,
   DrawerContent,
@@ -9,8 +11,9 @@ import {
 } from "@/components/ui/drawer"
 import { Button } from "@/components/ui/button"
 import { useSongStore, useQueueStore } from "@/stores"
-import type { LineMode, SongStanza } from "@/types"
+import type { LineMode, Song, SongStanza } from "@/types"
 import { SourceBadge } from "@/components/songs/source-badge"
+import { tidySong } from "@/lib/song-tidy"
 
 const LINE_MODES: { value: LineMode; label: string }[] = [
   { value: "line", label: "Line" },
@@ -32,9 +35,20 @@ export function SongDetailDrawer({
   const setLineMode = useSongStore((s) => s.setLineMode)
   const deleteSong = useSongStore((s) => s.deleteSong)
 
+  const saveSong = useSongStore((s) => s.saveSong)
+
   const enqueueSong = useQueueStore((s) => s.enqueueSong)
   const enqueueSongStanza = useQueueStore((s) => s.enqueueSongStanza)
   const presentSongLive = useQueueStore((s) => s.presentSongLive)
+
+  const [aggressive, setAggressive] = useState(false)
+  const undoSnapshot = useRef<{ songId: string; stanzas: SongStanza[]; chorus: SongStanza | null } | null>(null)
+  const [canUndo, setCanUndo] = useState(false)
+
+  useEffect(() => {
+    undoSnapshot.current = null
+    setCanUndo(false)
+  }, [songId])
 
   // If a drawer is open with a songId that no longer resolves (deleted
   // mid-interaction by another client/sync), close ourselves.
@@ -53,6 +67,30 @@ export function SongDetailDrawer({
     if (!window.confirm(`Delete "${label}"? This cannot be undone.`)) return
     await deleteSong(song.id)
     onClose()
+  }
+
+  async function handleTidy() {
+    if (!song) return
+    const result = tidySong(song, { aggressive })
+    if (result.splits === 0) {
+      toast(aggressive ? "No commas or sentences to split." : "No sentence breaks found. Try Aggressive.")
+      return
+    }
+    undoSnapshot.current = { songId: song.id, stanzas: song.stanzas, chorus: song.chorus }
+    const updated: Song = { ...song, stanzas: result.stanzas, chorus: result.chorus }
+    await saveSong(updated)
+    setCanUndo(true)
+    toast.success(`Split ${result.splits} line${result.splits === 1 ? "" : "s"}.`)
+  }
+
+  async function handleUndo() {
+    if (!song || !undoSnapshot.current || undoSnapshot.current.songId !== song.id) return
+    const snap = undoSnapshot.current
+    const restored: Song = { ...song, stanzas: snap.stanzas, chorus: snap.chorus }
+    await saveSong(restored)
+    undoSnapshot.current = null
+    setCanUndo(false)
+    toast("Restored.")
   }
 
   function renderStanza(
@@ -162,6 +200,28 @@ export function SongDetailDrawer({
                 </span>
               ) : null}
             </label>
+
+            <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-3">
+              <Button size="sm" variant="outline" onClick={handleTidy} className="gap-1.5">
+                <Wand2Icon className="size-3" />
+                Tidy lines
+              </Button>
+              <label className="flex items-center gap-1.5 text-xs">
+                <input
+                  type="checkbox"
+                  checked={aggressive}
+                  onChange={(e) => setAggressive(e.target.checked)}
+                  className="rounded"
+                />
+                Aggressive
+              </label>
+              {canUndo ? (
+                <Button size="sm" variant="ghost" onClick={handleUndo} className="gap-1.5">
+                  <Undo2Icon className="size-3" />
+                  Undo
+                </Button>
+              ) : null}
+            </div>
           </div>
 
           {/* Stanzas */}
