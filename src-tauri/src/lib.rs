@@ -288,6 +288,7 @@ pub fn run() {
             commands::summarize::generate_live_notes,
             commands::images::search_pexels,
             commands::images::search_unsplash,
+            commands::images::search_brave_images,
             commands::images::list_local_images,
             commands::images::delete_local_image,
             commands::images::read_local_image_data_url,

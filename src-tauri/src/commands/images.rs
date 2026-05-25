@@ -184,6 +184,113 @@ pub async fn search_unsplash(
         .collect())
 }
 
+// ── Brave Image Search ──────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+struct BraveResponse {
+    #[serde(default)]
+    results: Vec<BraveResult>,
+}
+
+#[derive(Deserialize)]
+struct BraveResult {
+    #[serde(default)]
+    title: Option<String>,
+    /// Source page URL.
+    #[serde(default)]
+    url: Option<String>,
+    /// Publisher / site name.
+    #[serde(default)]
+    source: Option<String>,
+    thumbnail: Option<BraveThumb>,
+    properties: Option<BraveProps>,
+}
+
+#[derive(Deserialize)]
+struct BraveThumb {
+    src: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct BraveProps {
+    /// Original image URL on the source site.
+    url: Option<String>,
+    /// Width / height when available.
+    #[serde(default)]
+    width: Option<u32>,
+    #[serde(default)]
+    height: Option<u32>,
+}
+
+#[tauri::command]
+pub async fn search_brave_images(
+    api_key: String,
+    query: String,
+    safesearch: Option<String>,
+) -> Result<Vec<ImageHit>, String> {
+    if api_key.trim().is_empty() {
+        return Err("Brave API key not set. Add it in Settings → API Keys.".into());
+    }
+    let q = query.trim();
+    if q.is_empty() {
+        return Ok(vec![]);
+    }
+    let client = reqwest::Client::builder()
+        .timeout(REQUEST_TIMEOUT)
+        .build()
+        .map_err(|e| e.to_string())?;
+    let safe = safesearch.as_deref().unwrap_or("strict");
+    let count_str = PER_PAGE.to_string();
+    let resp = client
+        .get("https://api.search.brave.com/res/v1/images/search")
+        .header("X-Subscription-Token", &api_key)
+        .header("Accept", "application/json")
+        .query(&[("q", q), ("count", count_str.as_str()), ("safesearch", safe)])
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("Brave error ({status}): {text}"));
+    }
+    let parsed: BraveResponse = resp.json().await.map_err(|e| e.to_string())?;
+    let mut out = Vec::with_capacity(parsed.results.len());
+    for (i, r) in parsed.results.into_iter().enumerate() {
+        let thumb = r.thumbnail.as_ref().and_then(|t| t.src.clone()).unwrap_or_default();
+        let full = r
+            .properties
+            .as_ref()
+            .and_then(|p| p.url.clone())
+            .or_else(|| Some(thumb.clone()))
+            .unwrap_or_default();
+        if full.is_empty() {
+            continue;
+        }
+        let (w, h) = r
+            .properties
+            .as_ref()
+            .map(|p| (p.width.unwrap_or(0), p.height.unwrap_or(0)))
+            .unwrap_or((0, 0));
+        out.push(ImageHit {
+            id: format!("brave-{i}"),
+            url: full,
+            thumbnail_url: if thumb.is_empty() {
+                out.last().map(|h| h.url.clone()).unwrap_or_default()
+            } else {
+                thumb
+            },
+            label: r.title.unwrap_or_default(),
+            provider: "brave".to_string(),
+            photographer: r.source,
+            photographer_url: r.url,
+            width: w,
+            height: h,
+        });
+    }
+    Ok(out)
+}
+
 // ── Local folder ────────────────────────────────────────────────────────
 
 const IMAGE_EXTS: &[&str] = &[

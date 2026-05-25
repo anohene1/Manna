@@ -12,7 +12,7 @@ import { persistLocalImageFolder } from "@/stores/settings-store"
 import { useServicePlan } from "@/hooks/use-service-plan"
 
 type Tab = "local" | "online"
-type Provider = "pexels" | "unsplash" | "local"
+type Provider = "pexels" | "unsplash" | "brave" | "local"
 
 interface ImageHit {
   id: string
@@ -45,6 +45,7 @@ export function ImagesPanel() {
 
   const pexelsKey = useSettingsStore((s) => s.pexelsApiKey)
   const unsplashKey = useSettingsStore((s) => s.unsplashApiKey)
+  const braveKey = useSettingsStore((s) => s.braveApiKey)
   const localFolder = useSettingsStore((s) => s.localImageFolder)
 
   const presentImageLive = useQueueStore((s) => s.presentImageLive)
@@ -56,8 +57,8 @@ export function ImagesPanel() {
     setLoading(true)
     try {
       if (tab === "online") {
-        // Run Pexels + Unsplash in parallel, merge results. Interleave so both
-        // providers are visible near the top.
+        // Run any configured provider in parallel, interleave the results
+        // round-robin so each source surfaces near the top of the grid.
         const calls: Array<Promise<ImageHit[]>> = []
         if (pexelsKey) {
           calls.push(
@@ -77,17 +78,26 @@ export function ImagesPanel() {
             }).catch(() => []),
           )
         }
+        if (braveKey) {
+          calls.push(
+            invoke<ImageHit[]>("search_brave_images", {
+              apiKey: braveKey,
+              query,
+            }).catch(() => []),
+          )
+        }
         if (calls.length === 0) {
           setHits([])
-          setError("Add a Pexels or Unsplash key in Settings → API Keys.")
+          setError("Add a Pexels, Unsplash, or Brave key in Settings → API Keys.")
           return
         }
-        const [a, b] = await Promise.all([calls[0], calls[1] ?? Promise.resolve([])])
+        const results = await Promise.all(calls)
         const merged: ImageHit[] = []
-        const len = Math.max(a.length, b.length)
+        const len = Math.max(...results.map((r) => r.length))
         for (let i = 0; i < len; i++) {
-          if (a[i]) merged.push(a[i])
-          if (b[i]) merged.push(b[i])
+          for (const r of results) {
+            if (r[i]) merged.push(r[i])
+          }
         }
         setHits(merged)
       } else {
@@ -332,12 +342,12 @@ export function ImagesPanel() {
         </div>
       )}
 
-      {tab === "online" && !pexelsKey && !unsplashKey && (
+      {tab === "online" && !pexelsKey && !unsplashKey && !braveKey && (
         <div className="flex flex-col items-center justify-center gap-2 p-6 text-center text-xs text-muted-foreground">
           <ImageIcon className="size-7 text-muted-foreground/40" />
           <p>
-            Add a Pexels or Unsplash API key in Settings → API Keys to search
-            online.
+            Add a Pexels, Unsplash, or Brave API key in Settings → API Keys to
+            search online.
           </p>
         </div>
       )}

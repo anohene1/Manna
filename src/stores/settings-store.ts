@@ -11,6 +11,7 @@ interface SettingsState {
   geniusToken: string | null
   pexelsApiKey: string | null
   unsplashApiKey: string | null
+  braveApiKey: string | null
   localImageFolder: string | null
   activeTranslationId: number
   audioDeviceId: string | null
@@ -29,6 +30,7 @@ interface SettingsState {
   setGeniusToken: (token: string | null) => void
   setPexelsApiKey: (key: string | null) => void
   setUnsplashApiKey: (key: string | null) => void
+  setBraveApiKey: (key: string | null) => void
   setLocalImageFolder: (path: string | null) => void
   setActiveTranslationId: (id: number) => void
   setAudioDeviceId: (id: string | null) => void
@@ -49,6 +51,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   geniusToken: null,
   pexelsApiKey: null,
   unsplashApiKey: null,
+  braveApiKey: null,
   localImageFolder: null,
   activeTranslationId: 1,
   audioDeviceId: null,
@@ -67,6 +70,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setGeniusToken: (geniusToken) => set({ geniusToken }),
   setPexelsApiKey: (pexelsApiKey) => set({ pexelsApiKey }),
   setUnsplashApiKey: (unsplashApiKey) => set({ unsplashApiKey }),
+  setBraveApiKey: (braveApiKey) => set({ braveApiKey }),
   setLocalImageFolder: (localImageFolder) => set({ localImageFolder }),
   setActiveTranslationId: (activeTranslationId) => set({ activeTranslationId }),
   setAudioDeviceId: (audioDeviceId) => set({ audioDeviceId }),
@@ -102,6 +106,7 @@ export async function hydrateSettings(): Promise<void> {
       geniusToken,
       pexelsApiKey,
       unsplashApiKey,
+      braveApiKey,
       localImageFolder,
       sttProvider,
       onboardingComplete,
@@ -119,6 +124,7 @@ export async function hydrateSettings(): Promise<void> {
       store.get<string>("geniusToken"),
       store.get<string>("pexelsApiKey"),
       store.get<string>("unsplashApiKey"),
+      store.get<string>("braveApiKey"),
       store.get<string>("localImageFolder"),
       store.get<SttProvider>("sttProvider"),
       store.get<boolean>("onboardingComplete"),
@@ -138,6 +144,7 @@ export async function hydrateSettings(): Promise<void> {
     if (geniusToken) s.setGeniusToken(geniusToken)
     if (pexelsApiKey) s.setPexelsApiKey(pexelsApiKey)
     if (unsplashApiKey) s.setUnsplashApiKey(unsplashApiKey)
+    if (braveApiKey) s.setBraveApiKey(braveApiKey)
     if (localImageFolder) s.setLocalImageFolder(localImageFolder)
     if (sttProvider) s.setSttProvider(sttProvider)
     if (onboardingComplete) s.setOnboardingComplete(true)
@@ -291,6 +298,18 @@ export async function persistUnsplashApiKey(key: string | null): Promise<void> {
     else await store.delete("unsplashApiKey")
   } catch {
     console.warn("[settings] Failed to persist Unsplash API key")
+  }
+}
+
+/** Persist Brave Search API key to disk. */
+export async function persistBraveApiKey(key: string | null): Promise<void> {
+  useSettingsStore.getState().setBraveApiKey(key)
+  try {
+    const store = await getStore()
+    if (key) await store.set("braveApiKey", key)
+    else await store.delete("braveApiKey")
+  } catch {
+    console.warn("[settings] Failed to persist Brave API key")
   }
 }
 
