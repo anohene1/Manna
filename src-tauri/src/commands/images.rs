@@ -272,14 +272,11 @@ pub async fn search_brave_images(
             .as_ref()
             .map(|p| (p.width.unwrap_or(0), p.height.unwrap_or(0)))
             .unwrap_or((0, 0));
+        let thumb_url = if thumb.is_empty() { full.clone() } else { thumb };
         out.push(ImageHit {
             id: format!("brave-{i}"),
             url: full,
-            thumbnail_url: if thumb.is_empty() {
-                out.last().map(|h| h.url.clone()).unwrap_or_default()
-            } else {
-                thumb
-            },
+            thumbnail_url: thumb_url,
             label: r.title.unwrap_or_default(),
             provider: "brave".to_string(),
             photographer: r.source,
@@ -289,6 +286,198 @@ pub async fn search_brave_images(
         });
     }
     Ok(out)
+}
+
+// ── App library (saved-from-online) ─────────────────────────────────────
+
+fn library_dir() -> PathBuf {
+    dirs::data_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("com.manna.app")
+        .join("library")
+        .join("images")
+}
+
+fn slugify(s: &str) -> String {
+    s.chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+        .collect::<String>()
+        .trim_matches('-')
+        .split('-')
+        .filter(|p| !p.is_empty())
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
+fn extension_from_url_or_content_type(url: &str, content_type: Option<&str>) -> String {
+    if let Some(ct) = content_type {
+        let ct = ct.to_ascii_lowercase();
+        if ct.contains("png") { return "png".into() }
+        if ct.contains("webp") { return "webp".into() }
+        if ct.contains("gif") { return "gif".into() }
+        if ct.contains("svg") { return "svg".into() }
+        if ct.contains("avif") { return "avif".into() }
+        if ct.contains("heic") || ct.contains("heif") { return "heic".into() }
+        if ct.contains("bmp") { return "bmp".into() }
+        if ct.contains("tiff") { return "tiff".into() }
+        if ct.contains("jpeg") || ct.contains("jpg") { return "jpg".into() }
+    }
+    // Fall back to URL extension.
+    let clean = url.split('?').next().unwrap_or(url);
+    let dot = clean.rfind('.').unwrap_or(0);
+    let ext = clean[dot + 1..].to_lowercase();
+    if IMAGE_EXTS.contains(&ext.as_str()) { ext } else { "jpg".into() }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+struct LibrarySidecar {
+    label: String,
+    provider: String,
+    photographer: Option<String>,
+    photographer_url: Option<String>,
+    source_url: Option<String>,
+    saved_at: i64,
+}
+
+#[tauri::command]
+pub async fn save_image_to_library(
+    url: String,
+    label: String,
+    provider: String,
+    photographer: Option<String>,
+    photographer_url: Option<String>,
+) -> Result<ImageHit, String> {
+    let dir = library_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(45))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("Download failed: HTTP {}", resp.status()));
+    }
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+    let ext = extension_from_url_or_content_type(&url, content_type.as_deref());
+    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
+
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    let slug = {
+        let s = slugify(&label);
+        if s.is_empty() { "image".to_string() } else { s }
+    };
+    let base = format!("{slug}-{provider}-{stamp}");
+    let file_path = dir.join(format!("{base}.{ext}"));
+    let sidecar_path = dir.join(format!("{base}.json"));
+
+    std::fs::write(&file_path, &bytes).map_err(|e| e.to_string())?;
+    let sidecar = LibrarySidecar {
+        label: label.clone(),
+        provider: provider.clone(),
+        photographer: photographer.clone(),
+        photographer_url: photographer_url.clone(),
+        source_url: Some(url),
+        saved_at: stamp,
+    };
+    let _ = std::fs::write(
+        &sidecar_path,
+        serde_json::to_string_pretty(&sidecar).unwrap_or_default(),
+    );
+
+    let path_str = file_path.to_string_lossy().to_string();
+    Ok(ImageHit {
+        id: format!("library-{base}"),
+        url: path_str.clone(),
+        thumbnail_url: path_str,
+        label,
+        provider: "library".to_string(),
+        photographer,
+        photographer_url,
+        width: 0,
+        height: 0,
+    })
+}
+
+#[tauri::command]
+pub fn list_library_images() -> Result<Vec<ImageHit>, String> {
+    let dir = library_dir();
+    if !dir.is_dir() {
+        return Ok(vec![]);
+    }
+    let mut hits = Vec::new();
+    let entries = std::fs::read_dir(&dir).map_err(|e| e.to_string())?;
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if !p.is_file() { continue }
+        let ext = p
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|s| s.to_lowercase())
+            .unwrap_or_default();
+        if !IMAGE_EXTS.contains(&ext.as_str()) { continue }
+
+        let sidecar_path = p.with_extension("json");
+        let meta: Option<LibrarySidecar> = std::fs::read_to_string(&sidecar_path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok());
+
+        let path_str = p.to_string_lossy().to_string();
+        let label = meta
+            .as_ref()
+            .map(|m| m.label.clone())
+            .unwrap_or_else(|| {
+                p.file_stem()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("image")
+                    .to_string()
+            });
+        hits.push(ImageHit {
+            id: format!("library-{path_str}"),
+            url: path_str.clone(),
+            thumbnail_url: path_str,
+            label,
+            provider: meta
+                .as_ref()
+                .map(|m| m.provider.clone())
+                .unwrap_or_else(|| "library".to_string()),
+            photographer: meta.as_ref().and_then(|m| m.photographer.clone()),
+            photographer_url: meta.as_ref().and_then(|m| m.photographer_url.clone()),
+            width: 0,
+            height: 0,
+        });
+    }
+    hits.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
+    Ok(hits)
+}
+
+#[tauri::command]
+pub fn delete_library_image(path: String) -> Result<(), String> {
+    let p = PathBuf::from(&path);
+    let lib = library_dir();
+    let canon_p = p.canonicalize().map_err(|e| e.to_string())?;
+    let canon_lib = lib.canonicalize().map_err(|e| e.to_string())?;
+    if !canon_p.starts_with(&canon_lib) {
+        return Err("Refusing to delete file outside the library dir".into());
+    }
+    if canon_p.is_file() {
+        std::fs::remove_file(&canon_p).map_err(|e| e.to_string())?;
+        let _ = std::fs::remove_file(canon_p.with_extension("json"));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn library_dir_path() -> String {
+    library_dir().to_string_lossy().to_string()
 }
 
 // ── Local folder ────────────────────────────────────────────────────────

@@ -13,7 +13,7 @@ import { LiveIndicator } from "@/components/ui/live-indicator"
 import { ApiKeyPrompt } from "@/components/ui/api-key-prompt"
 import { PreflightChecklist } from "@/components/preflight-checklist"
 import { startServiceFlow } from "@/lib/start-service"
-import { MicIcon, MicOffIcon, Loader2Icon, ArchiveIcon } from "lucide-react"
+import { MicIcon, MicOffIcon, Loader2Icon, HomeIcon } from "lucide-react"
 
 /* -------------------------------------------------------------------------- */
 /*  Elapsed timer                                                             */
@@ -136,10 +136,10 @@ export function Toolbar() {
         <Button
           variant="ghost"
           size="icon-sm"
-          title="View all sessions"
+          title="Home — back to sessions landing"
           onClick={() => useSessionStore.getState().openSessions()}
         >
-          <ArchiveIcon className="size-3.5" />
+          <HomeIcon className="size-3.5" />
         </Button>
         {isTranscribing && audioLevel && (audioLevel.rms > 0 || audioLevel.peak > 0) && (
           <LevelMeter level={audioLevel.rms} />

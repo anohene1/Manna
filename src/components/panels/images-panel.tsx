@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { invoke, convertFileSrc } from "@tauri-apps/api/core"
 import { open as openDialog } from "@tauri-apps/plugin-dialog"
-import { SearchIcon, FolderIcon, PlayIcon, PlusIcon, CalendarPlusIcon, ImageIcon, UploadIcon, XIcon, Trash2Icon } from "lucide-react"
+import { SearchIcon, FolderIcon, PlayIcon, PlusIcon, CalendarPlusIcon, ImageIcon, UploadIcon, XIcon, Trash2Icon, DownloadIcon, CheckIcon } from "lucide-react"
 import { ask } from "@tauri-apps/plugin-dialog"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -12,7 +12,7 @@ import { persistLocalImageFolder } from "@/stores/settings-store"
 import { useServicePlan } from "@/hooks/use-service-plan"
 
 type Tab = "local" | "online"
-type Provider = "pexels" | "unsplash" | "brave" | "local"
+type Provider = "pexels" | "unsplash" | "brave" | "local" | "library"
 
 interface ImageHit {
   id: string
@@ -36,12 +36,21 @@ interface ImageHit {
   validationFolder?: string
 }
 
+type OnlineFilter = "all" | "pexels" | "unsplash" | "brave"
+
 export function ImagesPanel() {
   const [tab, setTab] = useState<Tab>("local")
   const [query, setQuery] = useState("")
   const [hits, setHits] = useState<ImageHit[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [onlineFilter, setOnlineFilter] = useState<OnlineFilter>("all")
+  const [libraryDir, setLibraryDir] = useState<string | null>(null)
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    invoke<string>("library_dir_path").then(setLibraryDir).catch(() => setLibraryDir(null))
+  }, [])
 
   const pexelsKey = useSettingsStore((s) => s.pexelsApiKey)
   const unsplashKey = useSettingsStore((s) => s.unsplashApiKey)
@@ -101,21 +110,34 @@ export function ImagesPanel() {
         }
         setHits(merged)
       } else {
-        const folder = localFolder
-        if (!folder) {
-          setHits([])
-          return
+        // Merge library (saved-from-online) + user folder hits. Library first
+        // so freshly saved images surface near the top.
+        const calls: Array<Promise<ImageHit[]>> = []
+        calls.push(invoke<ImageHit[]>("list_library_images").catch(() => []))
+        if (localFolder) {
+          calls.push(invoke<ImageHit[]>("list_local_images", { folder: localFolder }).catch(() => []))
         }
-        const out = await invoke<ImageHit[]>("list_local_images", { folder })
-        // Convert raw filesystem paths to Tauri `asset:` URLs so the webview
-        // is allowed to fetch them (bypasses CSP on local files).
-        const withAssetUrls: ImageHit[] = out.map((h) => ({
-          ...h,
-          localPath: h.url,
-          url: convertFileSrc(h.url),
-          thumbnailUrl: convertFileSrc(h.thumbnailUrl),
-          validationFolder: folder,
-        }))
+        const [libHits, folderHits = []] = await Promise.all(calls)
+
+        const libDir = libraryDir
+        const withAssetUrls: ImageHit[] = [
+          ...libHits.map((h) => ({
+            ...h,
+            localPath: h.url,
+            url: convertFileSrc(h.url),
+            thumbnailUrl: convertFileSrc(h.thumbnailUrl),
+            validationFolder: libDir ?? undefined,
+            provider: "library" as Provider,
+          })),
+          ...folderHits.map((h) => ({
+            ...h,
+            localPath: h.url,
+            url: convertFileSrc(h.url),
+            thumbnailUrl: convertFileSrc(h.thumbnailUrl),
+            validationFolder: localFolder ?? undefined,
+          })),
+        ]
+
         const q = query.trim().toLowerCase()
         setHits(q ? withAssetUrls.filter((h) => h.label.toLowerCase().includes(q)) : withAssetUrls)
       }
@@ -234,6 +256,22 @@ export function ImagesPanel() {
     })
   }
 
+  const onDownload = async (hit: ImageHit) => {
+    if (hit.provider === "local" || hit.provider === "library") return
+    try {
+      await invoke<ImageHit>("save_image_to_library", {
+        url: hit.url,
+        label: hit.label || `Image from ${hit.provider}`,
+        provider: hit.provider,
+        photographer: hit.photographer,
+        photographerUrl: hit.photographerUrl,
+      })
+      setSavedIds((prev) => new Set(prev).add(hit.id))
+    } catch (e) {
+      setError(typeof e === "string" ? e : e instanceof Error ? e.message : String(e))
+    }
+  }
+
   const onDelete = async (hit: ImageHit) => {
     const folder = hit.validationFolder ?? localFolder
     if (!hit.localPath || !folder) return
@@ -243,10 +281,14 @@ export function ImagesPanel() {
     })
     if (!ok) return
     try {
-      await invoke("delete_local_image", {
-        path: hit.localPath,
-        folder,
-      })
+      if (hit.provider === "library") {
+        await invoke("delete_library_image", { path: hit.localPath })
+      } else {
+        await invoke("delete_local_image", {
+          path: hit.localPath,
+          folder,
+        })
+      }
       setHits((prev) => prev.filter((h) => h.id !== hit.id))
     } catch (e) {
       setError(typeof e === "string" ? e : e instanceof Error ? e.message : String(e))
@@ -352,6 +394,49 @@ export function ImagesPanel() {
         </div>
       )}
 
+      {tab === "online" && (pexelsKey || unsplashKey || braveKey) && hits.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1 border-b border-border/40 px-2 py-1.5">
+          {(() => {
+            const counts: Record<OnlineFilter, number> = {
+              all: hits.length,
+              pexels: hits.filter((h) => h.provider === "pexels").length,
+              unsplash: hits.filter((h) => h.provider === "unsplash").length,
+              brave: hits.filter((h) => h.provider === "brave").length,
+            }
+            const chips: { id: OnlineFilter; label: string; show: boolean }[] = [
+              { id: "all", label: "All", show: true },
+              { id: "pexels", label: "Pexels", show: !!pexelsKey && counts.pexels > 0 },
+              { id: "unsplash", label: "Unsplash", show: !!unsplashKey && counts.unsplash > 0 },
+              { id: "brave", label: "Brave", show: !!braveKey && counts.brave > 0 },
+            ]
+            return chips
+              .filter((c) => c.show)
+              .map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => setOnlineFilter(c.id)}
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors",
+                    onlineFilter === c.id
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground hover:bg-muted/60",
+                  )}
+                >
+                  {c.label}
+                  <span
+                    className={cn(
+                      "rounded-full px-1 text-[9px] tabular-nums",
+                      onlineFilter === c.id ? "bg-primary-foreground/20" : "bg-foreground/10",
+                    )}
+                  >
+                    {counts[c.id]}
+                  </span>
+                </button>
+              ))
+          })()}
+        </div>
+      )}
+
       {error && (
         <div className="border-b border-destructive/20 bg-destructive/5 px-3 py-2 text-[10px] text-destructive">
           {error}
@@ -359,26 +444,45 @@ export function ImagesPanel() {
       )}
 
       <div className="min-h-0 flex-1 overflow-auto p-2">
-        {loading && hits.length === 0 ? (
-          <p className="p-4 text-center text-xs text-muted-foreground">Searching…</p>
-        ) : hits.length === 0 ? (
-          tab === "online" && query.trim() && !error ? (
-            <p className="p-4 text-center text-xs text-muted-foreground">No matches.</p>
-          ) : null
-        ) : (
-          <ul className="grid grid-cols-2 gap-1.5">
-            {hits.map((hit) => (
-              <ImageTile
-                key={hit.id}
-                hit={hit}
-                onGoLive={() => void onGoLive(hit)}
-                onEnqueue={() => void onEnqueue(hit)}
-                onAddToPlan={() => void onAddToPlan(hit)}
-                onDelete={hit.provider === "local" && hit.localPath ? () => void onDelete(hit) : undefined}
-              />
-            ))}
-          </ul>
-        )}
+        {(() => {
+          const visibleHits =
+            tab === "online" && onlineFilter !== "all"
+              ? hits.filter((h) => h.provider === onlineFilter)
+              : hits
+          if (loading && visibleHits.length === 0) {
+            return <p className="p-4 text-center text-xs text-muted-foreground">Searching…</p>
+          }
+          if (visibleHits.length === 0) {
+            if (tab === "online" && query.trim() && !error) {
+              return <p className="p-4 text-center text-xs text-muted-foreground">No matches.</p>
+            }
+            return null
+          }
+          return (
+            <ul className="grid grid-cols-2 gap-1.5">
+              {visibleHits.map((hit) => (
+                <ImageTile
+                  key={hit.id}
+                  hit={hit}
+                  saved={savedIds.has(hit.id)}
+                  onGoLive={() => void onGoLive(hit)}
+                  onEnqueue={() => void onEnqueue(hit)}
+                  onAddToPlan={() => void onAddToPlan(hit)}
+                  onDownload={
+                    hit.provider === "pexels" || hit.provider === "unsplash" || hit.provider === "brave"
+                      ? () => void onDownload(hit)
+                      : undefined
+                  }
+                  onDelete={
+                    (hit.provider === "local" || hit.provider === "library") && hit.localPath
+                      ? () => void onDelete(hit)
+                      : undefined
+                  }
+                />
+              ))}
+            </ul>
+          )
+        })()}
       </div>
     </div>
   )
@@ -386,15 +490,19 @@ export function ImagesPanel() {
 
 function ImageTile({
   hit,
+  saved,
   onGoLive,
   onEnqueue,
   onAddToPlan,
+  onDownload,
   onDelete,
 }: {
   hit: ImageHit
+  saved?: boolean
   onGoLive: () => void
   onEnqueue: () => void
   onAddToPlan: () => void
+  onDownload?: () => void
   onDelete?: () => void
 }) {
   return (
@@ -411,6 +519,24 @@ function ImageTile({
         <span className="rounded bg-black/55 px-1 py-px text-[7px] font-semibold uppercase tracking-wide text-white">
           {hit.provider}
         </span>
+        {onDownload && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              if (!saved) onDownload()
+            }}
+            disabled={saved}
+            className={cn(
+              "rounded p-0.5 text-white transition-colors",
+              saved
+                ? "bg-emerald-600/85 cursor-default"
+                : "bg-black/70 hover:bg-primary",
+            )}
+            title={saved ? "Saved to library" : "Save to library"}
+          >
+            {saved ? <CheckIcon className="size-2.5" /> : <DownloadIcon className="size-2.5" />}
+          </button>
+        )}
         {onDelete && (
           <button
             onClick={(e) => {
