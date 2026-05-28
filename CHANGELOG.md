@@ -11,6 +11,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and th
 - Import EasyWorship 6 backups into manna.db _(songs)_
 - Implement standalone audio test functionality _(audio)_
 - Enhance verse rendering and text wrapping logic
+- Per-session audio recording (MP3 64 kbps mono) alongside transcription; click any transcript segment to seek the recorded audio to that moment _(audio)_
+- Preflight "Record audio" toggle (default on) wired through `start_transcription` _(preflight)_
+- Settings → Storage: list every session with a recording and delete the file + clear the `audio_path` column manually _(settings)_
 
 ## [0.1.0-rc2] - 2026-05-23
 

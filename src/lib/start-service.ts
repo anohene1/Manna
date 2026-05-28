@@ -61,6 +61,8 @@ export async function startServiceFlow(opts: StartServiceOptions = {}): Promise<
       deviceId: settings.audioDeviceId,
       gain: settings.gain,
       provider: settings.sttProvider,
+      sessionId: active?.id,
+      recordAudio: settings.recordAudio,
     })
   } catch (e) {
     const errorMsg = String(e)

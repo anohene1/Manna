@@ -75,6 +75,9 @@ tauri-plugin-updater = "2.10.1"
 tauri-plugin-process = "2.3.1"
 keepawake = "0.5"
 
+[dev-dependencies]
+tempfile = "3"
+
 [features]
 default = ["whisper", "onnx"]
 whisper = ["rhema-stt/whisper"]

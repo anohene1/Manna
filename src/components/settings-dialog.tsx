@@ -36,12 +36,14 @@ import {
   GraduationCapIcon,
   BrainCircuitIcon,
   Loader2Icon,
+  HardDriveIcon,
   XIcon,
 } from "lucide-react"
 import { useSettingsStore, persistDeepgramApiKey, persistAssemblyAiApiKey, persistClaudeApiKey, persistDeepseekApiKey, persistGeniusToken, persistEnabledHymnals, persistAutoMode, persistConfidenceThreshold, persistSttProvider, persistPexelsApiKey, persistUnsplashApiKey, persistBraveApiKey } from "@/stores"
 import { checkForUpdates } from "@/hooks/use-updater"
 import { HYMNAL_NAMES, HYMNAL_SOURCES } from "@/types"
 import { AudioTestPanel } from "@/components/audio-test-panel"
+import { StoragePanel } from "@/components/panels/settings/storage"
 import type { HymnalSource } from "@/types"
 import { useTutorialStore } from "@/stores/tutorial-store"
 import { useSettingsDialogStore } from "@/lib/settings-dialog"
@@ -51,7 +53,7 @@ import type { DeviceInfo } from "@/types/audio"
 /*  Nav definition                                                            */
 /* -------------------------------------------------------------------------- */
 
-type NavSection = "audio" | "speech" | "bible" | "display" | "hymnals" | "api-keys" | "remote" | "help"
+type NavSection = "audio" | "speech" | "bible" | "display" | "hymnals" | "api-keys" | "remote" | "storage" | "help"
 
 const navItems: { name: string; id: NavSection; icon: React.ReactNode }[] = [
   {
@@ -88,6 +90,11 @@ const navItems: { name: string; id: NavSection; icon: React.ReactNode }[] = [
     name: "API Keys",
     id: "api-keys",
     icon: <KeyIcon strokeWidth={2} />,
+  },
+  {
+    name: "Storage",
+    id: "storage",
+    icon: <HardDriveIcon strokeWidth={2} />,
   },
   {
     name: "Help",
@@ -905,6 +912,7 @@ const sectionTitles: Record<NavSection, string> = {
   hymnals: "Hymnals",
   remote: "Remote Control",
   "api-keys": "API Keys",
+  storage: "Storage",
   help: "Help",
 }
 
@@ -1464,6 +1472,7 @@ const sectionComponents: Record<NavSection, React.FC> = {
   hymnals: HymnalsSection,
   remote: RemoteControlSection,
   "api-keys": ApiKeysSection,
+  storage: StoragePanel,
   help: HelpSection,
 }
 

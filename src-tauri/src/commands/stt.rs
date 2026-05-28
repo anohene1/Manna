@@ -22,6 +22,7 @@ use rhema_stt::{DeepgramClient, SttConfig, SttProvider, TranscriptEvent};
 /// 4. Receives transcripts and emits `transcript_partial` / `transcript_final` events.
 /// 5. On final transcripts, runs the detection pipeline and emits `verse_detected` events.
 #[expect(clippy::too_many_lines, reason = "pipeline setup is inherently complex")]
+#[expect(clippy::too_many_arguments, reason = "Tauri command surface intentionally exposes all start options")]
 #[tauri::command]
 pub async fn start_transcription(
     app: AppHandle,
@@ -30,6 +31,8 @@ pub async fn start_transcription(
     device_id: Option<String>,
     gain: Option<f32>,
     provider: Option<String>,
+    session_id: Option<i64>,
+    record_audio: Option<bool>,
 ) -> Result<(), String> {
     // ── 1. Guard: already running? ──────────────────────────────────────
     // Idempotent: if already running, return Ok. The frontend may call Start
@@ -184,6 +187,43 @@ pub async fn start_transcription(
     //   c) computes levels → emits audio_level events
     //   d) forwards samples to STT provider via crossbeam
     let gain_val = gain.unwrap_or(1.0).clamp(0.0, 2.0);
+
+    // Resolve the per-session MP3 path. Recording is enabled by default; the
+    // caller can disable per-call by passing `record_audio: Some(false)`. If no
+    // `session_id` was provided we can't tie the file to a row, so skip silently.
+    let recording_path: Option<std::path::PathBuf> = if record_audio.unwrap_or(true) {
+        if let Some(sid) = session_id {
+            let app_data = dirs::data_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+                .join("com.manna.app")
+                .join("sessions")
+                .join(sid.to_string());
+            if let Err(e) = std::fs::create_dir_all(&app_data) {
+                log::warn!("[REC] could not create {}: {e}; skipping recording", app_data.display());
+                None
+            } else {
+                Some(app_data.join("audio.mp3"))
+            }
+        } else {
+            log::info!("[REC] recording requested but no session_id; skipping");
+            None
+        }
+    } else {
+        None
+    };
+
+    if let (Some(ref path), Some(sid)) = (&recording_path, session_id) {
+        let db_state: State<'_, Mutex<rhema_notes::SessionDb>> = app.state();
+        match db_state.lock() {
+            Ok(db) => {
+                if let Err(e) = db.set_session_audio_path(sid, &path.to_string_lossy()) {
+                    log::warn!("[REC] could not persist audio_path: {e}");
+                }
+            }
+            Err(e) => log::warn!("[REC] DB lock unavailable for audio_path: {e}"),
+        };
+    }
+
     let fan_active = stt_active.clone();
     let fan_app = app.clone();
 
@@ -197,6 +237,38 @@ pub async fn start_transcription(
             };
 
             let (audio_tx, audio_rx) = crossbeam_channel::bounded::<AudioFrame>(64);
+
+            // Open an MP3 writer if recording was requested. Failures are logged and
+            // recording is silently disabled — the transcript pipeline must keep working
+            // even if disk is full or LAME init fails.
+            let mut mp3: Option<rhema_audio::Mp3Writer> = match recording_path.as_ref() {
+                Some(path) => match rhema_audio::Mp3Writer::create(path, 16_000) {
+                    Ok(w) => {
+                        log::info!("[REC] recording to {}", path.display());
+                        Some(w)
+                    }
+                    Err(e) => {
+                        log::error!("[REC] Mp3Writer::create({}) failed: {e}", path.display());
+                        // Compensate for the eager DB write earlier: clear the audio_path so
+                        // a future playback attempt doesn't surface a broken link. The DB
+                        // write happens outside the thread on the Tauri side, so we need an
+                        // AppHandle clone to grab the SessionDb state.
+                        if let Some(sid) = session_id {
+                            let db_state: State<'_, Mutex<rhema_notes::SessionDb>> = fan_app.state();
+                            match db_state.lock() {
+                                Ok(db) => {
+                                    if let Err(e) = db.clear_session_audio_path(sid) {
+                                        log::warn!("[REC] could not clear audio_path after create failure: {e}");
+                                    }
+                                }
+                                Err(e) => log::warn!("[REC] DB lock unavailable to clear audio_path: {e}"),
+                            };
+                        }
+                        None
+                    }
+                },
+                None => None,
+            };
 
             // Start capture on THIS thread — AudioCapture stays here.
             let capture = match rhema_audio::capture::start(config, audio_tx) {
@@ -234,11 +306,36 @@ pub async fn start_transcription(
                             );
                         }
 
+                        // Write to MP3 first (uses &frame.samples) before moving samples into STT
+                        // channel, to avoid a clone.
+                        if mp3.is_some() {
+                            // Use `as_mut` to encode, then take + finalize on error so LAME's
+                            // trailing frames are flushed instead of dropped by `Mp3Writer`'s Drop.
+                            let encode_err = mp3
+                                .as_mut()
+                                .and_then(|writer| writer.write_samples(&frame.samples).err());
+                            if let Some(e) = encode_err {
+                                log::error!("[REC] write_samples failed: {e}; disabling recording");
+                                if let Some(writer) = mp3.take() {
+                                    if let Err(fe) = writer.finalize() {
+                                        log::error!("[REC] finalize after write error: {fe}");
+                                    }
+                                }
+                            }
+                        }
+
                         // (b) Forward all audio to STT provider
                         let _ = audio_send_tx.try_send(frame.samples);
                     }
                     Err(crossbeam_channel::RecvTimeoutError::Timeout) => {},
                     Err(crossbeam_channel::RecvTimeoutError::Disconnected) => break,
+                }
+            }
+
+            if let Some(writer) = mp3.take() {
+                match writer.finalize() {
+                    Ok(()) => log::info!("[REC] MP3 finalized"),
+                    Err(e) => log::error!("[REC] MP3 finalize failed: {e}"),
                 }
             }
 

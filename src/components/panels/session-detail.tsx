@@ -3,9 +3,11 @@ import { invoke } from "@tauri-apps/api/core"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { ArrowLeftIcon, BookOpenIcon, MicIcon, BarChart3Icon, DownloadIcon, ClipboardIcon, FileTextIcon, FileJsonIcon, PrinterIcon, SparklesIcon, LoaderIcon, CopyIcon, CheckIcon, StopCircleIcon, RefreshCwIcon, SearchIcon, PencilIcon, TagIcon, XIcon, Trash2Icon } from "lucide-react"
+import { ArrowLeftIcon, BookOpenIcon, MicIcon, BarChart3Icon, DownloadIcon, ClipboardIcon, FileTextIcon, FileJsonIcon, PrinterIcon, SparklesIcon, LoaderIcon, CopyIcon, CheckIcon, StopCircleIcon, RefreshCwIcon, SearchIcon, PencilIcon, TagIcon, XIcon, Trash2Icon, PlayIcon } from "lucide-react"
 import { summarizeTranscript, summaryFromJson, summaryToJson, type SermonSummary } from "@/lib/summarize"
 import type { SermonSession, SessionDetection, SessionTranscriptSegment, SessionNote } from "@/types/session"
+import { SessionAudioPlayer } from "@/components/session-audio-player"
+import { emitAudioSeek } from "@/hooks/use-audio-seek"
 
 type DetailTab = "detections" | "transcript" | "summary" | "stats"
 
@@ -577,6 +579,18 @@ export function SessionDetail({ sessionId, sessionTitle, initialTab, onBack }: S
 
         {!loading && tab === "transcript" && (
           <div className="flex flex-col gap-2 p-3">
+            {session?.audioPath && session?.startedAt && (
+              <SessionAudioPlayer
+                audioPath={session.audioPath}
+                // SQLite `datetime('now')` emits `"YYYY-MM-DD HH:MM:SS"` in
+                // UTC with no timezone marker. JS `new Date(...)` parses it as
+                // *local* time, but transcript `timestampMs` is a true UTC
+                // epoch ms, so subtraction would be off by the local TZ
+                // offset for any non-UTC user. Force UTC parsing by inserting
+                // `T` and appending `Z`.
+                startedAtMs={new Date(`${session.startedAt.replace(" ", "T")}Z`).getTime()}
+              />
+            )}
             {transcript.length === 0 ? (
               <p className="py-8 text-center text-xs text-muted-foreground">No transcript recorded</p>
             ) : (
@@ -921,6 +935,14 @@ function TranscriptRow({
 
   return (
     <div className="group flex items-start gap-1">
+      <button
+        type="button"
+        onClick={() => emitAudioSeek(segment.timestampMs)}
+        className="mt-0.5 shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-primary/10 hover:text-primary group-hover:opacity-100"
+        title="Play from here"
+      >
+        <PlayIcon className="size-3" />
+      </button>
       <p
         onClick={editMode ? onStartEdit : undefined}
         className={`flex-1 text-sm leading-relaxed text-foreground/80 ${editMode ? "cursor-text rounded px-1 -mx-1 hover:bg-muted/40" : ""}`}

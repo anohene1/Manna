@@ -5,6 +5,7 @@ pub mod broadcast;
 pub mod detection;
 pub mod hymnals;
 pub mod images;
+pub mod recording;
 pub mod remote;
 pub mod service_plan;
 pub mod session;

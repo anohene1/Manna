@@ -18,6 +18,7 @@ export interface SermonSession {
   status: SessionStatus
   plannedScriptures: PlannedScripture[]
   summary: string | null
+  audioPath: string | null
   createdAt: string
   updatedAt: string
 }

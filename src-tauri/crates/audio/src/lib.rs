@@ -16,7 +16,9 @@ pub mod device;
 pub mod meter;
 pub mod capture;
 pub mod vad;
+pub mod mp3_writer;
 
 pub use types::*;
 pub use error::*;
 pub use vad::{Vad, VadConfig, VadState, VadTransition};
+pub use mp3_writer::{Mp3Writer, Mp3WriterError};

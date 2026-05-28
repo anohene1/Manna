@@ -167,6 +167,10 @@ impl SessionDb {
         add_col("ALTER TABLE songs ADD COLUMN meter TEXT");
         add_col("ALTER TABLE songs ADD COLUMN scripture_ref TEXT");
         add_col("ALTER TABLE songs ADD COLUMN category TEXT");
+
+        // Per-session audio recording path. Idempotent ADD COLUMN — error ignored on
+        // re-runs once the column is present (SQLite has no IF NOT EXISTS for ADD COLUMN).
+        add_col("ALTER TABLE sermon_sessions ADD COLUMN audio_path TEXT");
         self.conn.execute_batch(
             "CREATE INDEX IF NOT EXISTS idx_songs_scripture ON songs(scripture_ref);",
         )?;
@@ -411,6 +415,30 @@ impl SessionDb {
             params![summary, id],
         )?;
 
+        if changed == 0 {
+            return Err(SessionError::NotFound(id.to_string()));
+        }
+        Ok(())
+    }
+
+    /// Persist the absolute path to a session's recorded MP3.
+    pub fn set_session_audio_path(&self, id: i64, path: &str) -> Result<()> {
+        let changed = self.conn.execute(
+            "UPDATE sermon_sessions SET audio_path = ?1, updated_at = datetime('now') WHERE id = ?2",
+            params![path, id],
+        )?;
+        if changed == 0 {
+            return Err(SessionError::NotFound(id.to_string()));
+        }
+        Ok(())
+    }
+
+    /// Clear the `audio_path` for a session (after the file is deleted).
+    pub fn clear_session_audio_path(&self, id: i64) -> Result<()> {
+        let changed = self.conn.execute(
+            "UPDATE sermon_sessions SET audio_path = NULL, updated_at = datetime('now') WHERE id = ?1",
+            params![id],
+        )?;
         if changed == 0 {
             return Err(SessionError::NotFound(id.to_string()));
         }
@@ -903,7 +931,7 @@ impl SessionDb {
     pub fn get_recent_sessions(&self, limit: i64) -> Result<Vec<SermonSession>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, title, speaker, date, series_name, tags, started_at, ended_at,
-                    status, planned_scriptures, summary, created_at, updated_at
+                    status, planned_scriptures, summary, created_at, updated_at, audio_path
              FROM sermon_sessions ORDER BY created_at DESC LIMIT ?1",
         )?;
         let rows = stmt.query_map(params![limit], |row| Ok(row_to_session(row)))?;
@@ -948,6 +976,10 @@ fn row_to_session(row: &Row<'_>) -> std::result::Result<SermonSession, serde_jso
     let planned_scriptures: Vec<PlannedScripture> = serde_json::from_str(&scriptures_str)?;
     let status = SessionStatus::from_str(&status_str).unwrap_or(SessionStatus::Planned);
 
+    // `audio_path` was added by a later migration; tolerate the column being
+    // absent in legacy rows by treating a missing read as `None`.
+    let audio_path: Option<String> = row.get(13).ok().flatten();
+
     Ok(SermonSession {
         id: row.get_unwrap(0),
         title: row.get_unwrap(1),
@@ -962,6 +994,7 @@ fn row_to_session(row: &Row<'_>) -> std::result::Result<SermonSession, serde_jso
         summary: row.get_unwrap(10),
         created_at: row.get_unwrap(11),
         updated_at: row.get_unwrap(12),
+        audio_path,
     })
 }
 
@@ -1011,4 +1044,35 @@ fn row_to_distribution(row: &Row<'_>) -> rusqlite::Result<SessionDistribution> {
         sent_at: row.get(4)?,
         status: row.get(5)?,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::CreateSessionRequest;
+
+    #[test]
+    fn audio_path_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = SessionDb::open(&dir.path().join("test.db")).unwrap();
+        let session = db
+            .create_session(&CreateSessionRequest {
+                title: "Test".into(),
+                speaker: None,
+                date: "2026-05-28".into(),
+                series_name: None,
+                tags: vec![],
+                planned_scriptures: vec![],
+            })
+            .unwrap();
+        assert_eq!(session.audio_path, None);
+
+        db.set_session_audio_path(session.id, "/tmp/x.mp3").unwrap();
+        let reloaded = db.get_session(session.id).unwrap();
+        assert_eq!(reloaded.audio_path, Some("/tmp/x.mp3".into()));
+
+        db.clear_session_audio_path(session.id).unwrap();
+        let cleared = db.get_session(session.id).unwrap();
+        assert_eq!(cleared.audio_path, None);
+    }
 }

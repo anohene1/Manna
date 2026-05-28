@@ -223,12 +223,33 @@ pub fn set_broadcast_fullscreen(
     let window = app
         .get_webview_window(label)
         .ok_or_else(|| format!("Broadcast window '{output_id}' not open"))?;
-    window
-        .set_fullscreen(fullscreen)
-        .map_err(|e| e.to_string())?;
+
     if fullscreen {
+        // Enter native fullscreen. macOS animates into a fullscreen Space; the
+        // chrome is hidden by the OS regardless of decorations flag.
+        window
+            .set_fullscreen(true)
+            .map_err(|e| e.to_string())?;
         window.show().map_err(|e| e.to_string())?;
         window.set_focus().map_err(|e| e.to_string())?;
+    } else {
+        // Restore chrome BEFORE exiting fullscreen — on macOS the styleMask
+        // applied at exit-time determines whether the restored window has a
+        // titlebar and resize handles. Applying these after `set_fullscreen
+        // (false)` lands too late and the window stays borderless + locked.
+        let _ = window.set_decorations(true);
+        let _ = window.set_resizable(true);
+        window
+            .set_fullscreen(false)
+            .map_err(|e| e.to_string())?;
+        // Re-apply on the next tick — macOS sometimes drops the styleMask
+        // changes during the fullscreen exit animation.
+        let win = window.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            let _ = win.set_decorations(true);
+            let _ = win.set_resizable(true);
+        });
     }
     Ok(())
 }

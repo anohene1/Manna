@@ -340,6 +340,7 @@ pub fn run() {
             commands::session::mark_distribution_sent,
             commands::session::mark_distribution_failed,
             commands::session::delete_distribution,
+            commands::recording::delete_session_audio,
             commands::themes::list_custom_themes,
             commands::themes::save_custom_theme,
             commands::themes::delete_custom_theme,

@@ -57,6 +57,7 @@ pub struct SermonSession {
     pub summary: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    pub audio_path: Option<String>,
 }
 
 /// Request payload for creating a new session.

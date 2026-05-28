@@ -1,12 +1,14 @@
 import { useState, useEffect } from "react"
 import { invoke } from "@tauri-apps/api/core"
 import { useSettingsStore } from "@/stores"
+import { persistRecordAudio } from "@/stores/settings-store"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Switch } from "@/components/ui/switch"
 import { CheckCircle2, XCircle, Mic, Key, Volume2, AlertCircle } from "lucide-react"
 
 interface PreflightChecklistProps {
@@ -25,6 +27,7 @@ interface CheckItem {
 export function PreflightChecklist({ open, onOpenChange, onStart }: PreflightChecklistProps) {
   const [checks, setChecks] = useState<CheckItem[]>([])
   const [ready, setReady] = useState(false)
+  const recordAudio = useSettingsStore((s) => s.recordAudio)
 
   useEffect(() => {
     if (!open) return
@@ -190,6 +193,19 @@ export function PreflightChecklist({ open, onOpenChange, onStart }: PreflightChe
               </div>
             </div>
           ))}
+        </div>
+
+        <div className="mt-3 flex items-center justify-between rounded-xl bg-muted/30 px-3 py-2 ring-1 ring-border/40">
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className="text-xs font-semibold">Record audio</span>
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              Save an MP3 recording of the session for later playback.
+            </p>
+          </div>
+          <Switch
+            checked={recordAudio}
+            onCheckedChange={(checked) => void persistRecordAudio(checked)}
+          />
         </div>
 
         <div className="mt-2 rounded-lg bg-muted/30 px-3 py-2">
