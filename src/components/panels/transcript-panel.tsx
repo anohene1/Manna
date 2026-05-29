@@ -17,10 +17,17 @@ import { switchTranslation } from "@/lib/switch-translation"
 import type { TranscriptSegment } from "@/types"
 import type { DetectionResult } from "@/types"
 
+const PROVIDER_LABEL: Record<string, string> = {
+  deepgram: "Deepgram · nova-2",
+  assemblyai: "AssemblyAI · universal",
+  whisper: "Whisper · local",
+}
+
 export function TranscriptPanel() {
   const segments = useTranscriptStore((s) => s.segments)
   const currentPartial = useTranscriptStore((s) => s.currentPartial)
   const isTranscribing = useTranscriptStore((s) => s.isTranscribing)
+  const sttProvider = useSettingsStore((s) => s.sttProvider)
   const scrollRef = useRef<HTMLDivElement>(null)
   // Auto-broadcast cooldown — prevents rapid flickering between verses.
   const lastAutoBroadcastAtRef = useRef(0)
@@ -211,6 +218,14 @@ export function TranscriptPanel() {
       data-slot="transcript-panel"
       className="flex h-full min-w-0 flex-col overflow-hidden bg-card"
     >
+      {/* Active STT provider label — helps operators verify they're on the
+          expected model (especially when toggling between cloud and local). */}
+      {isTranscribing && (
+        <div className="flex items-center justify-end gap-1.5 border-b border-border/40 px-3 py-1 text-[0.625rem] tabular-nums text-muted-foreground/70">
+          <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden />
+          <span>{PROVIDER_LABEL[sttProvider] ?? sttProvider}</span>
+        </div>
+      )}
       <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-y-auto">
         <div className="flex flex-col gap-2 p-3">
           {/* Faded top gradient */}

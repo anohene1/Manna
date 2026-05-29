@@ -4,7 +4,7 @@ Real-time AI-powered Bible verse detection for live sermons and broadcasts. A Ta
 
 Manna listens to a live sermon audio feed, transcribes speech in real time, detects Bible verse references (both explicit citations and quoted passages), and renders them as broadcast-ready overlays via NDI for live production.
 
-> Manna is a friendly fork of [openbezal/rhema](https://github.com/openbezal/rhema), extended for church livestream workflows: multi-provider STT, sermon planner, live session management, AI summaries, and an API-key verifier.
+> Manna is a friendly fork of [openbezal/rhema](https://github.com/openbezal/rhema), extended for church livestream workflows: multi-provider STT, service plan + session management, AI sermon summaries + live notes, image search → projection, and an API-key verifier.
 
 ---
 
@@ -18,27 +18,61 @@ Manna listens to a live sermon audio feed, transcribes speech in real time, dete
 
 Rhema ships a fixed 4-column CSS grid with 6 hardcoded panels. Manna replaces this with:
 
-- **Resizable panel workspace** (`react-resizable-panels`) with draggable dividers — 13 panel slots, switchable via a tabbed panel bar
+- **Resizable panel workspace** (`react-resizable-panels`) with draggable dividers; right column is vertically split — Queue/History/Cross-refs tabs on top, **pinned Service Plan** on the bottom (resizable)
 - **Warm earth-tone OKLCH palette** — Manna shifts from rhema's green-lime primary (`oklch(0.53 0.16 131)` on pure white) to a warmer scheme (`oklch(0.45 0.1 155)` on warm off-white `oklch(0.965 0.008 75)`) with a full dark-mode overhaul
-- **Motion system** — spring, smooth, and snap easing curves with duration tokens (`--ease-spring`, `--duration-fast`, etc.), not present upstream
-- **10 dialogs / drawers** (upstream has 2) — welcome, about, announcement, resume session, end session, export notes, distribute summary, plus Vaul drawer primitives
+- **Motion system** — spring, smooth, and snap easing curves with duration tokens (`--ease-spring`, `--duration-fast`, etc.)
+- **Bottom-sheet drawers** as the default for task workflows (Vaul) — announcement, service-plan-item editor, broadcast settings, template manager, notes selection, paste lyrics. Centered Dialog reserved for confirms / quick-jumps / launchers.
+- **Settings as full-screen overlay** — sidebar nav + content pane, replaces the old 800×600 modal
+- **Bible picker grids** — Books grid (OT/NT) → Chapters grid → existing verse list, breadcrumb back-nav. Popover combobox kept for power users.
 - **Command palette** (cmdk) for keyboard-driven navigation
 - **Native app menu** bridged to in-app actions
+- **Sonner toasts** for non-blocking feedback
 
-### Sermon workflow
+### Service Plan + sessions workflow
 
+- **Sessions-first landing screen** — fresh launch shows a sessions list and "Start a new session" card, not the workspace
+- **Sessions Mode overlay** — full-screen takeover w/ landing list + per-session detail (Summary / Transcript / Detections / Stats). Home icon in toolbar opens it.
+- **Service Plan panel** with drag-reorderable items of multiple kinds:
+  - `verse` — Bible verse w/ translation
+  - `song` — hymnal / online song lookup w/ stanza presentation
+  - `announcement` — ticker (scrolling bottom strip) or full slide; presets, mode cards, duration pills, live preview
+  - `notes` — selectable bullet slide (see below)
+  - `blank` — logo or custom image
+  - `momo` / `jesus` — preset full-screen images
+  - `section` — visual divider
+- **Plan-item activation** opens an edit drawer; "Save & Go Live" is one click
 - **Persistent sessions** — transcript, detections, notes saved per service (SQLite), resumable across restarts
-- **Start Service** one-click flow with pre-flight checklist (mic / API key / network)
-- **7 new panels:** sessions, session detail, notes, history, analytics, cross-reference, planner (merged into queue)
-- **AI sermon summary** via Claude for export
-- **Session export** — clipboard, markdown, JSON, print
+- **Auto-preflight from landing** — submitting "Start a new session" creates the session in `planned` status, then the preflight checklist opens; Start Service in preflight stamps `startedAt` (timer begins precisely there) and kicks off transcription
+- **Pre-flight checklist** — mic / API key / network checks before recording starts
+
+### Notes (manual + AI)
+
+- **Notes panel** with markdown bold/italic inline rendering
+- **AI "Generate points" button** — DeepSeek extracts 1-2 NEW personal-note-style bullets from transcript-so-far (no reported speech). Operator-triggered, not automatic.
+- **Notes Plan Item** — a service plan kind that opens a Vaul drawer; operator picks notes (click-ordered ordinals), optional title, live preview, **Go Live** or **Update slide** (replaces Go Live when this item is already on screen). Notes can be added/edited inline from the drawer.
+- **Themed projection** — canvas renderer paints numbered chips, accent-rule title, word-wrapped bullets
+
+### Projection pipeline
+
+- **Image search → live** — Pexels, Unsplash, Brave image providers; `presentImageLive` pipes selection straight to `setFullscreenImage` on the broadcast store
+- **Default-to-blank projector boot** — EWC logo screen on session start, no black void
+- **Projector picker** w/ proportional monitor arrangement view
+- **Custom image upload** on blank-slide plan items (file picker → embedded URL)
+- **Announcement runtime** — ticker (RAF marquee at the bottom; current slide stays visible) or slide (full takeover). Pause/Resume/Dismiss + countdown chips on the broadcast monitor header and on the active plan item.
+
+### AI / summaries
+
+- **DeepSeek API** powers both end-of-session sermon summaries and the live "Generate points" notes — replaces the original Anthropic Claude integration (cheaper, OpenAI-compatible, falls back from `deepseek-chat` to `deepseek-reasoner`)
+- **Structured summary** — JSON shape (topic, key verses, main points, takeaways, quotes) persisted to the session row; rendered as cards in the Summary tab
+- **Operator-confirmed verses** flow into the prompt as `key_verses` ground truth
 
 ### STT + reliability
 
 - **AssemblyAI Universal-Streaming** as a second provider, alongside Deepgram + Whisper
-- **One-click API-key verifier** — HTTP auth probe + WebSocket handshake, inline ✓ / ✗
+- **One-click API-key verifier** — HTTP auth probe + WebSocket handshake, inline ✓ / ✗ (Deepgram, AssemblyAI, DeepSeek)
 - **Shared WebSocket runtime** — Deepgram + AssemblyAI share one connect/reconnect loop
 - **Proper reconnect semantics** — `stt_reconnecting` vs `stt_disconnected` so transient drops don't tear down the UI
+- **Keepawake** — laptop won't sleep while Manna is open (dropped on quit)
 
 **→ [Full feature comparison with file pointers](docs/wiki/Manna-vs-Rhema.md)**
 
@@ -48,12 +82,13 @@ Rhema ships a fixed 4-column CSS grid with 6 hardcoded panels. Manna replaces th
 
 | Layer | Technologies |
 |---|---|
-| **Frontend** | React 19, TypeScript, Tailwind CSS v4, shadcn/ui, Zustand, Vite 7 |
+| **Frontend** | React 19, TypeScript, Tailwind CSS v4, shadcn/ui, Vaul (drawers), Sonner (toasts), Zustand, Vite 7 |
 | **Backend** | Tauri v2, Rust (workspace with 7 crates) |
-| **AI / ML** | ONNX Runtime (Qwen3-0.6B embeddings), Aho-Corasick, Fuse.js, Anthropic Claude (summaries) |
+| **AI / ML** | ONNX Runtime (Qwen3-0.6B embeddings), Aho-Corasick, Fuse.js, MiniSearch, **DeepSeek** (sermon summaries + live notes — OpenAI-compatible, `deepseek-chat` / `deepseek-reasoner` fallback) |
 | **Database** | SQLite via rusqlite (bundled) with FTS5 |
 | **Broadcast** | NDI 6 SDK via dynamic loading (libloading FFI) |
 | **STT** | Deepgram + AssemblyAI (WebSocket via tokio-tungstenite, shared ws_runtime), Whisper (local, `ggml-large-v3-turbo`) |
+| **Image search** | Pexels, Unsplash, Brave Search Image API |
 
 ### Rust crates
 
@@ -81,7 +116,12 @@ Rhema ships a fixed 4-column CSS grid with 6 hardcoded panels. Manna replaces th
   - [Deepgram API key](https://deepgram.com/) — Nova-3, keyword boosting
   - [AssemblyAI API key](https://assemblyai.com/) — Universal-Streaming v3, cheaper ($0.15 / hr), strong proper-noun accuracy
   - Or Whisper (no key, runs locally — `bun run setup:whisper`)
-- [Anthropic API key](https://console.anthropic.com/) — optional, powers the AI sermon summary
+- [DeepSeek API key](https://platform.deepseek.com/) — optional, powers the AI sermon summary and the "Generate points" live notes (very cheap; sermon summary ≈ $0.001/run)
+- **Optional image search providers** — any combination of:
+  - [Pexels API key](https://www.pexels.com/api/) — free
+  - [Unsplash API key](https://unsplash.com/developers) — free
+  - [Brave Search API key](https://brave.com/search/api/) — free tier
+- [Genius API token](https://genius.com/api-clients) — optional, song lookup via the Songs panel
 
 ### Resource requirements
 
@@ -162,10 +202,14 @@ Create a `.env` file in the project root:
 ```
 DEEPGRAM_API_KEY=your_key_here
 ASSEMBLYAI_API_KEY=your_key_here
-ANTHROPIC_API_KEY=your_key_here     # optional, for AI summaries
+DEEPSEEK_API_KEY=your_key_here       # optional — AI sermon summary + live "Generate points" notes
+PEXELS_API_KEY=your_key_here         # optional — image search → live projection
+UNSPLASH_API_KEY=your_key_here       # optional — image search alternative
+BRAVE_API_KEY=your_key_here          # optional — image search alternative
+GENIUS_API_KEY=your_key_here         # optional — song lookup
 ```
 
-Keys can also be entered in **Settings → Speech** inside the app and verified with the **Test** button.
+Keys can also be entered in **Settings → API Keys** inside the app and verified with the **Test** button (Deepgram, AssemblyAI, DeepSeek).
 
 ### NDI SDK (optional)
 
@@ -216,26 +260,34 @@ Individual legacy scripts (`download:bible-data`, `build:bible`, `download:model
 
 ### Before the service
 
-1. **Settings → Speech** — pick a provider, paste the key, click **Test**. Green check = HTTP auth passed and the streaming WebSocket handshake succeeded. If you see red, the detail message tells you why (invalid key, network, rate-limited, etc.).
-2. **Settings → Audio** — pick the input device and check the gain meter.
-3. **Settings → Bible** — set the active translation.
-4. **Settings → Display Mode** — choose manual vs auto-broadcast, set the confidence threshold and cooldown.
+1. **Settings → API Keys** — paste keys for Deepgram or AssemblyAI (STT), DeepSeek (AI), Pexels/Unsplash/Brave (image search), Genius (songs). Click **Test** on Deepgram / AssemblyAI / DeepSeek to verify.
+2. **Settings → Speech Recognition** — pick the STT provider (Deepgram / AssemblyAI / Whisper).
+3. **Settings → Audio** — pick the input device and check the gain meter.
+4. **Settings → Bible** — set the active translation.
+5. **Settings → Display Mode** — choose manual vs auto-broadcast, set the confidence threshold and cooldown.
+6. **Settings → Hymnals** — toggle which hymnal sources are seeded into the local song DB.
 
 ### During the service
 
-1. Click **Start Service**. The pre-flight checklist runs:
+1. From the **sessions landing screen**, fill in title (speaker / series optional) → submit. The session is created in `planned` status; the pre-flight checklist opens automatically.
+2. Pre-flight runs:
    - ✓ Audio device available
    - ✓ Selected provider API key configured
    - ✓ Network reachable
-2. Transcription starts and the detection pipeline emits verses as they're mentioned.
-3. **Auto mode** broadcasts the top-confidence verse automatically (respecting the cooldown). **Manual mode** shows candidates; you click a verse or use the Queue to go live.
-4. The **Queue** doubles as a sermon planner — search, reorder, and load verses ahead of time, or build it on the fly.
-5. Verses that cross the 99% threshold are auto-added to the **History** tab.
+3. Click **Start Service** in the checklist → session promoted to `live` (timer starts here), transcription begins, detection pipeline emits verses as they're mentioned.
+4. **Auto mode** broadcasts the top-confidence verse automatically (respecting the cooldown). **Manual mode** shows candidates; you click a verse or use the Queue to go live.
+5. The **Queue** doubles as a sermon planner — search, reorder, and load verses ahead of time, or build it on the fly.
+6. **Service Plan** (bottom of right column) holds your pre-planned items. Click ▶ on any item to send it live (verse, song, image, announcement, notes, blank).
+7. **Notes panel** — type bullets (markdown bold/italic). Click **Generate points** any time to have DeepSeek summarise the transcript-so-far as 1-2 NEW operator-style bullets. To project: add a `Notes` item to the Service Plan, ▶ to open the selection drawer, pick bullets (click-ordered), optionally set a title, **Go Live**. Later edits use **Update slide**.
+8. **Announcements** — ticker (scrolling bottom band) or full slide; pause/resume/dismiss inline.
+9. Verses that cross the 99% threshold are auto-added to the **History** tab; presented verses are persisted to the session.
 
 ### After the service
 
-- **Export** — clipboard / markdown / JSON / print from the session panel.
-- **AI summary** — Claude summarises the transcript (short-transcript and API-overload fallbacks included).
+- **End Service** confirmation dialog → transcription stops, session is finalised, DeepSeek summary fires in the background, and Sessions Mode jumps to the new Summary tab.
+- **Summary tab** renders the AI summary as cards (Topic / Key Verses / Main Points / 5 Takeaways / Quotes).
+- **Export** — clipboard / markdown / JSON / print from the session detail.
+- **Distribute summary** drawer — save or copy the summary for sharing.
 
 ---
 
@@ -245,17 +297,28 @@ Individual legacy scripts (`download:bible-data`, `build:bible`, `download:model
 manna/
 ├── src/                          # React frontend
 │   ├── components/
-│   │   ├── broadcast/            # Theme designer, NDI settings, broadcast monitor
+│   │   ├── broadcast/            # Theme designer, broadcast monitor, announcement dialog, broadcast settings, projector picker
 │   │   ├── controls/             # Transport bar
-│   │   ├── layout/               # Dashboard layout
-│   │   ├── panels/               # Transcript, preview, live output, queue, search, detections, sessions, notes
-│   │   ├── settings-dialog.tsx   # Settings UI (Speech, Audio, Bible, Display, API keys, Remote)
+│   │   ├── layout/               # Workspace, toolbar, sessions-landing
+│   │   ├── notes/                # Notes selection drawer
+│   │   ├── panels/               # transcript, preview, live-output, queue, search, detections,
+│   │   │                         # sessions, session-detail, notes, history, analytics,
+│   │   │                         # cross-ref, service-plan-panel, service-plan-item, service-plan-item-editor,
+│   │   │                         # songs, images
+│   │   ├── service-plan/         # add-item-menu, activation-router, template-manager, add-verse / add-song dialogs
+│   │   ├── session/              # end-session-dialog, export-notes drawer, distribute-summary drawer
+│   │   ├── songs/                # song-detail-drawer, online-song-preview-drawer, song-jump-dialog, paste-lyrics drawer
+│   │   ├── settings-dialog.tsx   # Settings UI (Audio, Speech, Bible, Display, Hymnals, Remote, API Keys, Help)
 │   │   ├── preflight-checklist.tsx
-│   │   └── ui/                   # shadcn/ui + custom components
-│   ├── hooks/                    # useAudio, useTranscription, useDetection, useBible, useBroadcast
-│   ├── stores/                   # Zustand stores (audio, transcript, bible, queue, detection, broadcast, settings, session)
+│   │   └── ui/                   # shadcn/ui + custom (drawer, dialog, sidebar, command, sonner toaster, etc.)
+│   ├── broadcast-output.tsx      # Projector window — canvas renderer for verses / images / notes / blank / announcement
+│   ├── hooks/                    # useAudio, useTranscription, useDetection, useBible, useBroadcast, useServicePlan, useSession
+│   ├── stores/                   # Zustand stores (audio, transcript, bible, queue, detection, broadcast,
+│   │                             #                  settings, session, service-plan, song, panel-tabs, ...)
 │   ├── types/                    # TypeScript type definitions
-│   └── lib/                      # Context search (Fuse.js), verse renderer (Canvas 2D), builtin themes
+│   └── lib/                      # markdown-inline (React tree, no innerHTML), notes-renderer (Canvas 2D),
+│                                 # verse-renderer (Canvas 2D), context-search (Fuse.js), bible-chapters (canonical
+│                                 # chapter counts), start-service, ai-notes-scheduler, builtin-themes, ...
 ├── src-tauri/                    # Rust backend (Tauri v2)
 │   ├── crates/
 │   │   ├── audio/                # Audio capture & metering (cpal)
@@ -330,9 +393,13 @@ Create a `.env` file in the project root:
 |---|---|---|
 | `DEEPGRAM_API_KEY` | One required (or Whisper) | Deepgram speech-to-text |
 | `ASSEMBLYAI_API_KEY` | One required (or Whisper) | AssemblyAI speech-to-text |
-| `ANTHROPIC_API_KEY` | Optional | Enables the AI sermon summary on export |
+| `DEEPSEEK_API_KEY` | Optional | AI sermon summary on session end + live "Generate points" notes |
+| `PEXELS_API_KEY` | Optional | Image search → live projection |
+| `UNSPLASH_API_KEY` | Optional | Image search alternative |
+| `BRAVE_API_KEY` | Optional | Image search alternative |
+| `GENIUS_API_KEY` | Optional | Song lookup |
 
-Keys pasted into **Settings → Speech** are persisted via `tauri-plugin-store` and override the `.env` values.
+Keys pasted into **Settings → API Keys** are persisted via `tauri-plugin-store` and override the `.env` values.
 
 ---
 
@@ -341,16 +408,23 @@ Keys pasted into **Settings → Speech** are persisted via `tauri-plugin-store` 
 | Command | Purpose |
 |---|---|
 | `start_transcription` / `stop_transcription` | Audio → STT → detection pipeline lifecycle |
-| `verify_deepgram_key` / `verify_assemblyai_key` | HTTP auth + WebSocket handshake probe for the given key |
+| `verify_deepgram_key` / `verify_assemblyai_key` / `verify_deepseek_key` | HTTP auth + WebSocket handshake probe for the given key |
 | `detect_verses` / `semantic_search` / `quotation_search` | Detection pipeline entry points |
 | `reading_mode_status` / `stop_reading_mode` | Reading-mode classifier controls |
-| `create_session` / `start_session` / `end_session` / `list_sessions` | Session lifecycle |
+| `create_session` / `start_session` / `end_session` / `list_sessions` / `delete_session` | Session lifecycle |
 | `update_session_title` / `update_session_summary` | Session metadata |
-| `add_session_detection` / `add_session_transcript` / `add_session_note` | Session persistence |
-| `ensure_broadcast_window` / `open_broadcast_window` / `close_broadcast_window` | Broadcast output window |
+| `add_session_detection` / `record_presented_verse` / `get_session_detections` | Verse detection + "went on screen" recording |
+| `add_session_transcript` / `get_session_transcript` | Transcript persistence |
+| `add_session_note` / `update_session_note` / `get_session_notes` | Notes CRUD (manual + AI rows) |
+| `summarize_sermon` / `generate_live_notes` | DeepSeek-backed AI summaries + live "Generate points" |
+| `plan_get` / `plan_add_item` / `plan_update_item` / `plan_delete_item` / `plan_reorder_item` | Service plan CRUD |
+| `plan_list_templates` / `plan_save_template` / `plan_load_template_into_session` | Service plan templates |
+| `ensure_broadcast_window` / `open_broadcast_window` / `close_broadcast_window` / `is_broadcast_open` | Broadcast output window |
+| `list_monitors` / `primary_monitor` | Projector picker (monitor enumeration) |
 | `start_ndi` / `stop_ndi` / `get_ndi_status` / `push_ndi_frame` | NDI output |
 | `start_osc` / `start_http` / `update_remote_status` | Remote control (OSC + HTTP) |
 | `list_custom_themes` / `save_custom_theme` / `delete_custom_theme` | Theme designer persistence |
+| `seed_hymnal` / `list_songs` / `save_song` / `delete_song` | Songs + hymnal seeding |
 
 ---
 
