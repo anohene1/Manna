@@ -159,6 +159,24 @@ fn quit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
 
+/// Open the webview devtools. Callable from the frontend so the View menu
+/// item can fall back to `invoke("open_devtools")` if menu-event dispatch is
+/// flaky. Requires the `devtools` feature on the `tauri` crate.
+#[tauri::command]
+fn open_devtools(app: tauri::AppHandle) {
+    use tauri::Manager;
+    let window = app
+        .get_webview_window("main")
+        .or_else(|| app.webview_windows().into_values().next());
+    match window {
+        Some(w) => {
+            log::info!("[devtools] opening on window {:?}", w.label());
+            w.open_devtools();
+        }
+        None => log::error!("[devtools] no webview window found"),
+    }
+}
+
 /// Pre-warm the reqwest/rustls connection pool for API hosts used later.
 ///
 /// Runs a single HEAD request per host at startup so the first user-initiated
@@ -257,6 +275,7 @@ pub fn run() {
         }))
         .invoke_handler(tauri::generate_handler![
             quit_app,
+            open_devtools,
             get_flavor,
             commands::bible::list_translations,
             commands::bible::list_books,
@@ -560,13 +579,16 @@ pub fn run() {
         })
         .on_menu_event(|app, event| {
             let id = event.id().0.clone();
+            log::info!("[menu] event: {id}");
             // Handle quit natively — closing via JS only hides the window on macOS
             if id == "manna:quit" {
                 app.exit(0);
                 return;
             }
             use tauri::Emitter;
-            let _ = app.emit("menu-event", id);
+            if let Err(e) = app.emit("menu-event", id) {
+                log::error!("[menu] failed to emit menu-event: {e}");
+            }
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

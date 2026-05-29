@@ -40,6 +40,8 @@ export function createCommands(actions: {
   toggleTranscript: () => void
   resetLayout: () => void
   toggleTheme: () => void
+  reloadWindow: () => void
+  openDevtools: () => void
   openAbout: () => void
   openPreferences: () => void
   quitApp: () => void
@@ -73,6 +75,8 @@ export function createCommands(actions: {
     { id: "view:toggle-transcript", label: "Toggle Transcript", group: "View", shortcut: "⌘J", execute: actions.toggleTranscript },
     { id: "view:reset-layout", label: "Reset Layout", group: "View", execute: actions.resetLayout },
     { id: "view:toggle-theme", label: "Toggle Theme", group: "View", execute: actions.toggleTheme },
+    { id: "view:reload", label: "Reload Window", group: "View", execute: actions.reloadWindow },
+    { id: "view:open-devtools", label: "Open Developer Tools", group: "View", execute: actions.openDevtools },
 
     // Navigate
     { id: "navigate:search", label: "Bible", group: "Navigate", execute: () => actions.navigateTo("search") },

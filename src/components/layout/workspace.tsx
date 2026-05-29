@@ -190,6 +190,18 @@ export function Workspace() {
         toggleTheme: () => {
           setTheme(theme === "dark" ? "light" : "dark")
         },
+        reloadWindow: () => {
+          // Confirm before reloading mid-service so the user doesn't lose
+          // queue state on an accidental Cmd+R press during a live broadcast.
+          const isLive = useBroadcastStore.getState().isLive
+          if (isLive && !window.confirm("Reload window? Live broadcast will pause and queue state may reset.")) {
+            return
+          }
+          window.location.reload()
+        },
+        openDevtools: () => {
+          void invoke("open_devtools")
+        },
         openAbout: () => {
           useAboutDialogStore.getState().openAbout()
         },
