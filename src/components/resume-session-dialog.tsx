@@ -54,6 +54,11 @@ export function ResumeSessionDialog() {
           deviceId: settings.audioDeviceId,
           gain: settings.gain,
           provider: settings.sttProvider,
+          // Tie recording to the resumed session — without this, resumed
+          // sessions produced no audio (no session_id → recording skipped).
+          // Recording resumes as a new segment; segments merge on End.
+          sessionId: orphanedSession.id,
+          recordAudio: settings.recordAudio,
         })
       } catch (e) {
         console.error("Failed to start transcription on resume:", e)
@@ -66,6 +71,10 @@ export function ResumeSessionDialog() {
   const handleEnd = async () => {
     if (orphanedSession) {
       try {
+        // Merge any audio segments captured before the crash into the final
+        // recording so it isn't lost when the session is closed.
+        const { ensureSessionAudioMerged } = await import("@/lib/finalize-recording")
+        await ensureSessionAudioMerged(orphanedSession.id)
         await invoke("end_session", { id: orphanedSession.id })
       } catch {
         // already ended or error — ignore

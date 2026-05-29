@@ -84,16 +84,25 @@ export function Toolbar() {
     const confirmed = await ask("End service? This will stop transcription and save the session.", { title: "End Service", kind: "warning" })
     if (!confirmed) return
     try {
-      await invoke("stop_transcription")
+      const session = useSessionStore.getState().activeSession
+
+      // Stop transcription + merge audio segments into the final recording.
+      if (session) {
+        const { finalizeRecording } = await import("@/lib/finalize-recording")
+        await finalizeRecording(session.id)
+      } else {
+        await invoke("stop_transcription")
+      }
       useTranscriptStore.getState().setTranscribing(false)
       useTranscriptStore.getState().setPartial("")
       useTranscriptStore.getState().setConnectionStatus("disconnected")
 
       // End the session + fire AI summary in the background
-      const session = useSessionStore.getState().activeSession
       if (session) {
         await invoke("end_session", { id: session.id })
         useSessionStore.getState().setActiveSession(null)
+        const { clearPersistedQueue } = await import("@/stores/queue-store")
+        clearPersistedQueue()
         const { generateAndPersistSummary } = await import("@/lib/summarize")
         void generateAndPersistSummary(session.id)
 

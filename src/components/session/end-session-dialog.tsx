@@ -10,6 +10,8 @@ import {
 import { useEndSessionDialogStore } from "@/lib/end-session-dialog"
 import { useSession } from "@/hooks/use-session"
 import { useSessionStore } from "@/stores"
+import { clearPersistedQueue } from "@/stores/queue-store"
+import { finalizeRecording } from "@/lib/finalize-recording"
 import { generateAndPersistSummary } from "@/lib/summarize"
 
 export function EndSessionDialog() {
@@ -22,6 +24,9 @@ export function EndSessionDialog() {
     if (!sessionId) return
     setIsEnding(true)
     try {
+      // Stop transcription + merge audio segments into the final recording
+      // before flipping the session to completed.
+      await finalizeRecording(sessionId)
       const updated = await endSession(sessionId)
       const manualSummary = summary.trim()
       if (manualSummary) {
@@ -32,6 +37,10 @@ export function EndSessionDialog() {
         void generateAndPersistSummary(sessionId)
       }
       useSessionStore.getState().setActiveSession(updated)
+
+      // Session over — drop the persisted in-flight queue so a later reload
+      // doesn't restore a completed session's queue.
+      clearPersistedQueue()
 
       // Open Sessions Mode + jump directly to this session's Summary tab.
       useSessionStore.getState().openSessionInMode({

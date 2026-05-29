@@ -200,10 +200,20 @@ export function TranscriptPanel() {
     }
   })
 
-  // On mount (including hot reload), reset backend transcription state
-  // so stale stt_active flags don't block "Start transcribing"
+  // On mount (including webview reload), DON'T blindly stop transcription —
+  // a reload keeps the Rust capture/recording thread alive, and stopping it
+  // would drop the live recording segment and force a restart. Instead query
+  // the backend: if it's still transcribing, re-attach (our event listeners
+  // above are already registered, so transcript + detections keep flowing).
   useEffect(() => {
-    invoke("stop_transcription").catch(() => {})
+    invoke<boolean>("get_stt_status")
+      .then((running) => {
+        if (running) {
+          useTranscriptStore.getState().setConnectionStatus("connected")
+          useTranscriptStore.getState().setTranscribing(true)
+        }
+      })
+      .catch(() => {})
   }, [])
 
   // Auto-scroll to bottom

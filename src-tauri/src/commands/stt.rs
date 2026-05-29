@@ -188,21 +188,33 @@ pub async fn start_transcription(
     //   d) forwards samples to STT provider via crossbeam
     let gain_val = gain.unwrap_or(1.0).clamp(0.0, 2.0);
 
-    // Resolve the per-session MP3 path. Recording is enabled by default; the
-    // caller can disable per-call by passing `record_audio: Some(false)`. If no
-    // `session_id` was provided we can't tie the file to a row, so skip silently.
+    // Resolve the per-session recording target. Recording is enabled by
+    // default; disable per-call with `record_audio: Some(false)`. Without a
+    // `session_id` we can't tie the file to a row, so skip silently.
+    //
+    // Each start writes a NEW segment file (`audio-seg-<millis>.mp3`) rather
+    // than truncating a single `audio.mp3`. A reload→restart or crash→resume
+    // therefore never overwrites prior audio — segments accumulate and are
+    // concatenated into the final `audio.mp3` on End Session (or lazily when
+    // the session is next opened). The eagerly-stored `audio_path` points at
+    // that final file.
     let recording_path: Option<std::path::PathBuf> = if record_audio.unwrap_or(true) {
         if let Some(sid) = session_id {
-            let app_data = dirs::data_dir()
+            let session_dir = dirs::data_dir()
                 .unwrap_or_else(|| std::path::PathBuf::from("."))
                 .join("com.manna.app")
                 .join("sessions")
                 .join(sid.to_string());
-            if let Err(e) = std::fs::create_dir_all(&app_data) {
-                log::warn!("[REC] could not create {}: {e}; skipping recording", app_data.display());
+            if let Err(e) = std::fs::create_dir_all(&session_dir) {
+                log::warn!("[REC] could not create {}: {e}; skipping recording", session_dir.display());
                 None
             } else {
-                Some(app_data.join("audio.mp3"))
+                let millis = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis())
+                    .unwrap_or(0);
+                // 13-digit, zero-padded so lexicographic sort == chronological.
+                Some(session_dir.join(format!("audio-seg-{millis:013}.mp3")))
             }
         } else {
             log::info!("[REC] recording requested but no session_id; skipping");
@@ -212,16 +224,27 @@ pub async fn start_transcription(
         None
     };
 
-    if let (Some(ref path), Some(sid)) = (&recording_path, session_id) {
-        let db_state: State<'_, Mutex<rhema_notes::SessionDb>> = app.state();
-        match db_state.lock() {
-            Ok(db) => {
-                if let Err(e) = db.set_session_audio_path(sid, &path.to_string_lossy()) {
-                    log::warn!("[REC] could not persist audio_path: {e}");
+    // Eagerly point `audio_path` at the final concatenated file (even though it
+    // doesn't exist until concat) so the session row reflects that audio is
+    // being captured. The concat step writes the actual file.
+    if let Some(sid) = session_id {
+        if recording_path.is_some() {
+            let final_path = dirs::data_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+                .join("com.manna.app")
+                .join("sessions")
+                .join(sid.to_string())
+                .join("audio.mp3");
+            let db_state: State<'_, Mutex<rhema_notes::SessionDb>> = app.state();
+            match db_state.lock() {
+                Ok(db) => {
+                    if let Err(e) = db.set_session_audio_path(sid, &final_path.to_string_lossy()) {
+                        log::warn!("[REC] could not persist audio_path: {e}");
+                    }
                 }
-            }
-            Err(e) => log::warn!("[REC] DB lock unavailable for audio_path: {e}"),
-        };
+                Err(e) => log::warn!("[REC] DB lock unavailable for audio_path: {e}"),
+            };
+        }
     }
 
     let fan_active = stt_active.clone();
@@ -332,11 +355,17 @@ pub async fn start_transcription(
                 }
             }
 
+            let had_recording = mp3.is_some();
             if let Some(writer) = mp3.take() {
                 match writer.finalize() {
                     Ok(()) => log::info!("[REC] MP3 finalized"),
                     Err(e) => log::error!("[REC] MP3 finalize failed: {e}"),
                 }
+            }
+            // Signal that this segment is fully flushed/closed so the frontend's
+            // finalize step can safely concatenate without racing the writer.
+            if had_recording {
+                let _ = fan_app.emit("recording_segment_finalized", ());
             }
 
             // Dropping `capture` stops the cpal stream.
@@ -1029,6 +1058,17 @@ pub fn stop_transcription(
 
     log::info!("Transcription stop requested");
     Ok(())
+}
+
+/// Whether the transcription/recording pipeline is currently running.
+///
+/// Used by the frontend on mount (e.g. after a webview reload) to decide
+/// whether to re-attach to a still-running session instead of restarting it —
+/// restarting would spawn a duplicate capture thread and a fresh audio segment.
+#[tauri::command]
+pub fn get_stt_status(state: State<'_, Mutex<AppState>>) -> Result<bool, String> {
+    let app_state = state.lock().map_err(|e| e.to_string())?;
+    Ok(app_state.stt_active.load(Ordering::Relaxed))
 }
 
 /* -------------------------------------------------------------------------- */

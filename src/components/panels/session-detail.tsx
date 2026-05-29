@@ -92,6 +92,9 @@ function downloadFile(content: string, filename: string, mime: string) {
 export function SessionDetail({ sessionId, sessionTitle, initialTab, onBack }: SessionDetailProps) {
   const [tab, setTab] = useState<DetailTab>(initialTab ?? "summary")
   const [session, setSession] = useState<SermonSession | null>(null)
+  // Bumped after a lazy audio merge so the <audio> element remounts and
+  // reloads the freshly-written audio.mp3 (the path string is unchanged).
+  const [audioNonce, setAudioNonce] = useState(0)
   const [detections, setDetections] = useState<SessionDetection[]>([])
   const [transcript, setTranscript] = useState<SessionTranscriptSegment[]>([])
   const [notes, setNotes] = useState<SessionNote[]>([])
@@ -171,6 +174,18 @@ export function SessionDetail({ sessionId, sessionTitle, initialTab, onBack }: S
       setNotes(n)
       setSummary(summaryFromJson(sess.summary))
       setLoading(false)
+
+      // Lazily merge any leftover audio segments (e.g. the app reloaded or
+      // crashed before End Session). Skip live sessions — their current
+      // segment is still being written. Refresh audioPath after merging.
+      if (sess.status !== "live") {
+        void import("@/lib/finalize-recording").then(({ ensureSessionAudioMerged }) =>
+          ensureSessionAudioMerged(sessionId).then((path) => {
+            setSession((s) => (s ? { ...s, audioPath: path } : s))
+            setAudioNonce((n) => n + 1)
+          }),
+        )
+      }
     }).catch(() => setLoading(false))
   }, [sessionId])
 
@@ -581,6 +596,9 @@ export function SessionDetail({ sessionId, sessionTitle, initialTab, onBack }: S
           <div className="flex flex-col gap-2 p-3">
             {session?.audioPath && session?.startedAt && (
               <SessionAudioPlayer
+                // Remount after a lazy merge so the <audio> element reloads
+                // instead of showing a stale/404'd src for the same path.
+                key={audioNonce}
                 audioPath={session.audioPath}
                 // SQLite `datetime('now')` emits `"YYYY-MM-DD HH:MM:SS"` in
                 // UTC with no timezone marker. JS `new Date(...)` parses it as

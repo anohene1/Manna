@@ -7,7 +7,7 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
-use mp3lame_encoder::{Builder, FlushNoGap, Id3Tag, MonoPcm, Quality};
+use mp3lame_encoder::{Builder, FlushNoGap, MonoPcm, Quality};
 
 #[derive(thiserror::Error, Debug)]
 #[non_exhaustive]
@@ -18,8 +18,6 @@ pub enum Mp3WriterError {
     LameInit,
     #[error("lame build: {0:?}")]
     LameBuild(mp3lame_encoder::BuildError),
-    #[error("lame id3: {0:?}")]
-    LameId3(mp3lame_encoder::Id3TagError),
     #[error("lame encode: {0:?}")]
     LameEncode(mp3lame_encoder::EncodeError),
 }
@@ -47,16 +45,10 @@ impl Mp3Writer {
         builder
             .set_quality(Quality::Good)
             .map_err(Mp3WriterError::LameBuild)?;
-        builder
-            .set_id3_tag(Id3Tag {
-                title: b"Manna sermon recording",
-                artist: b"",
-                album: b"",
-                year: b"",
-                comment: b"",
-                album_art: &[],
-            })
-            .map_err(Mp3WriterError::LameId3)?;
+        // No ID3 tag: recordings are written as multiple segments that are
+        // later concatenated by raw byte-append. A pure MP3 frame stream (no
+        // mid-stream ID3v2 tags) concatenates cleanly and plays in every
+        // decoder.
         let encoder = builder.build().map_err(Mp3WriterError::LameBuild)?;
         Ok(Self {
             encoder,

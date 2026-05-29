@@ -3,6 +3,18 @@ import type { QueueItem, Song } from "@/types"
 import { expandSong } from "@/lib/song-expand"
 import { songMeta } from "@/lib/song-meta"
 import { useSongStore } from "./song-store"
+import { useSessionStore } from "./session-store"
+
+// localStorage key for the in-flight queue. Tagged with the active session id
+// so a reload mid-service restores that session's queue, while a fresh session
+// starts empty.
+const QUEUE_STORAGE_KEY = "manna:queue"
+
+interface PersistedQueue {
+  sessionId: number | null
+  items: QueueItem[]
+  activeIndex: number | null
+}
 
 interface QueueState {
   items: QueueItem[]
@@ -166,6 +178,72 @@ export const useQueueStore = create<QueueState>((set, get) => ({
     })()
   },
 }))
+
+// ── Persistence ────────────────────────────────────────────────────
+// Survive an accidental reload mid-service. The queue is written to
+// localStorage on every change (tagged with the active session id) and
+// restored when that same session becomes active again.
+
+/** Restore the persisted queue if it belongs to `sessionId`, else reset to
+ *  empty (a fresh session must not inherit the previous session's queue). */
+export function hydrateQueue(sessionId: number): void {
+  let restored = false
+  try {
+    const raw = localStorage.getItem(QUEUE_STORAGE_KEY)
+    if (raw) {
+      const data = JSON.parse(raw) as PersistedQueue
+      if (data.sessionId === sessionId && Array.isArray(data.items)) {
+        useQueueStore.setState({
+          items: data.items,
+          activeIndex: typeof data.activeIndex === "number" ? data.activeIndex : null,
+        })
+        restored = true
+      }
+    }
+  } catch (e) {
+    console.warn("[queue] hydrate failed", e)
+  }
+  if (!restored) {
+    useQueueStore.setState({ items: [], activeIndex: null })
+  }
+}
+
+/** Drop the persisted queue (call on End Session). */
+export function clearPersistedQueue(): void {
+  try {
+    localStorage.removeItem(QUEUE_STORAGE_KEY)
+  } catch (e) {
+    console.warn("[queue] clear persisted failed", e)
+  }
+}
+
+// Write on every queue change, but only while a session is active — otherwise
+// the empty post-reload init state would clobber a saved queue before the
+// session is restored.
+useQueueStore.subscribe((state) => {
+  const sessionId = useSessionStore.getState().activeSession?.id ?? null
+  if (sessionId === null) return
+  try {
+    const payload: PersistedQueue = {
+      sessionId,
+      items: state.items,
+      activeIndex: state.activeIndex,
+    }
+    localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(payload))
+  } catch (e) {
+    console.warn("[queue] persist failed", e)
+  }
+})
+
+// Restore the queue when a session becomes active (e.g. after a reload the
+// ResumeSessionDialog re-sets activeSession). A fresh session resets to empty.
+let lastTrackedSessionId: number | null = null
+useSessionStore.subscribe((state) => {
+  const id = state.activeSession?.id ?? null
+  if (id === lastTrackedSessionId) return
+  lastTrackedSessionId = id
+  if (id !== null) hydrateQueue(id)
+})
 
 // Reactive: when a song is deleted from song-store, strip queue items
 // referencing it AND keep activeIndex pointing at the same item by id (items
