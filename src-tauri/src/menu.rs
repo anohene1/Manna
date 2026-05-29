@@ -167,6 +167,18 @@ pub fn build(app: &App) -> tauri::Result<Menu<Wry>> {
                 true,
                 None::<&str>,
             )?,
+            &PredefinedMenuItem::separator(app)?,
+            // Explicit reload entry — the webview's right-click "Reload" is
+            // disabled in production (see oncontextmenu handler in main.tsx)
+            // to prevent accidental mid-service reloads, so users need a
+            // discoverable menu path when something legitimately needs reset.
+            &MenuItem::with_id(
+                app,
+                "view:reload",
+                "Reload Window",
+                true,
+                Some("CmdOrCtrl+R"),
+            )?,
         ],
     )?;
 

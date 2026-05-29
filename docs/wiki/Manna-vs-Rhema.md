@@ -2,7 +2,7 @@
 
 Manna is a friendly fork of [openbezal/rhema](https://github.com/openbezal/rhema). This page is the authoritative list of what's shared, what Manna adds, and what Manna changes.
 
-If a feature isn't listed under **Manna additions** or **Manna changes**, assume it comes from rhema and credit belongs upstream.
+If a feature isn't listed under **Manna additions** or **Manna changes**, the architecture comes from rhema. Many such features have Manna fingerprints on top — tuning, bug fixes, and small extensions — called out inline in the **Inherited** section.
 
 ---
 
@@ -25,27 +25,27 @@ The most visible difference. Manna is not a reskin — it's a different layout, 
 
 ---
 
-## Shared with upstream rhema
+## Inherited from upstream rhema
 
-Real-time sermon verse detection — these are rhema's core. Manna inherits them unchanged (or lightly refactored):
+The **architecture** of these subsystems is rhema's. Some Manna left as-is; many Manna tuned, extended, or fixed. Annotations call out where Manna touched.
 
-- Real-time speech-to-text via **Deepgram Nova-3** (WebSocket streaming)
-- Local **Whisper** STT (`ggml-large-v3-turbo`) as an offline option
-- Multi-strategy verse detection pipeline:
+- Real-time speech-to-text via **Deepgram Nova-3** (WebSocket streaming) — *Manna refactored: ws_runtime now shared with AssemblyAI, split reconnect/disconnect semantics*
+- Local **Whisper** STT (`ggml-large-v3-turbo`) as an offline option — *as-is*
+- Multi-strategy verse detection pipeline — *core architecture rhema's; Manna tuned thresholds, prioritized Qwen3 over MiniLM (2082a19), added FP16 ONNX support (afc0671), fixed `parse_tens` spoken-number bug (272bffe), smarter semantic filter (308b4eb), voice navigation (ad35adc)*:
   - Direct reference parsing (Aho-Corasick + fuzzy matching)
   - Semantic search (Qwen3-0.6B ONNX embeddings + HNSW vector index)
   - Quotation matching against verse text
   - Cloud booster (semantic re-rank)
   - Sermon context tracking + sentence buffering
-  - Reading-mode classifier (reading vs. referencing)
-- SQLite Bible database (FTS5)
-- Multiple translations: KJV, NIV, ESV, NASB, NKJV, NLT, AMP + ES / FR / PT
-- Cross-reference lookup (340k+ refs, openbible.info)
-- **NDI broadcast output** for live production
-- **Theme designer** — canvas editor with backgrounds, text styling, positioning, shadows, outlines
-- Audio level metering, live indicator, session timer
-- Data pipeline: download translations, build SQLite DB, export ONNX model, precompute embeddings
-- Tauri v2 desktop app, React 19 frontend, Rust workspace backend
+  - Reading-mode classifier (reading vs. referencing) — *Manna rewrote (~1062 → ~797 lines)*
+- SQLite Bible database (FTS5) — *as-is*
+- Multiple translations: KJV, NIV, ESV, NASB, NKJV, NLT + ES / FR / PT — *Manna added **AMP** (Amplified) seeding (fb1d885)*
+- Cross-reference lookup (340k+ refs, openbible.info) — *Manna fixed integer-column query bug (4517b97)*
+- **NDI broadcast output** for live production — *as-is, minor event-naming change (c81160f)*
+- **Theme designer** — canvas editor schema (backgrounds, text styling, positioning, shadows, outlines) is rhema's; *Manna **revamped the UI** ("modern, compact, Figma-inspired" — a050850)*
+- Audio capture (cpal stream), level metering, live indicator, session timer — *Manna added per-session audio recording (3f44c93) + standalone audio test panel (c57e157) + input-gain control on top*
+- Data pipeline (download translations, build SQLite DB, export ONNX model, precompute embeddings) — *Manna added phase-subset orchestrator + GPU pre-flight (c84f11b), EasyWorship 6 import (99af9e3), multi-hymnal seeding*
+- Tauri v2 desktop app, React 19 frontend, Rust workspace backend — *as-is*
 
 ---
 
@@ -187,4 +187,6 @@ Manna rewrote parts of reading-mode (upstream's is ~1,062 lines; Manna's is ~797
 
 ## Credit
 
-The hard parts — real-time audio capture, the detection ensemble, ONNX embedding pipeline, NDI output, theme designer, Bible data pipeline — are rhema's work. Manna sits on top and adds the church-livestream workflow, a second STT provider, the service plan + sessions UX, AI sermon notes via DeepSeek, image search → projection, and reliability improvements. Please star [openbezal/rhema](https://github.com/openbezal/rhema) too.
+rhema built the foundational architecture: the audio-capture loop, the multi-strategy detection ensemble, the ONNX embedding pipeline, the NDI FFI, the theme schema + canvas renderer engine, the Bible data pipeline, and the original Tauri + React + Rust workspace shape. That is meaningful, hard work that Manna would not exist without — please star [openbezal/rhema](https://github.com/openbezal/rhema).
+
+What Manna did on top: tuned detection thresholds + prioritized Qwen3; added FP16 ONNX, AMP translation, multi-hymnal seeding, EasyWorship 6 import, phase-subset setup orchestrator; refactored STT into a shared WebSocket runtime (Deepgram + AssemblyAI) with split reconnect/disconnect semantics; revamped the theme designer UI; rebuilt the workspace shell (resizable panels, sessions-first landing, full-screen settings, drawer-first dialogs, command palette, native menu); added the entire church-livestream workflow (persistent sessions, service plan, notes panel + AI notes via DeepSeek, projection pipeline w/ image search, announcement runtime, projector picker); and migrated AI summaries from Anthropic Claude to DeepSeek. Honest framing: rhema is the engine; Manna is a deep workflow + reliability fork on top.

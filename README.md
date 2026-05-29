@@ -10,7 +10,7 @@ Manna listens to a live sermon audio feed, transcribes speech in real time, dete
 
 ## What Manna adds
 
-> Built on [openbezal/rhema](https://github.com/openbezal/rhema) (core detection pipeline, NDI output, theme designer, Bible DB). Manna is a full UI redesign plus a church-livestream workflow and reliability layer.
+> Built on [openbezal/rhema](https://github.com/openbezal/rhema)'s detection ensemble, NDI FFI, theme schema, Bible data pipeline, and audio capture. Manna inherited the architecture, then tuned thresholds, prioritized Qwen3 over MiniLM, added a shared WebSocket runtime (Deepgram + AssemblyAI), revamped the theme designer UI, extended the Bible DB (Amplified + multi-hymnal seeding + EasyWorship import), and layered the church-livestream workflow on top.
 
 <!-- screenshots: add before/after images here -->
 
