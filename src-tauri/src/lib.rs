@@ -300,6 +300,8 @@ pub fn run() {
             commands::stt::start_transcription,
             commands::stt::stop_transcription,
             commands::stt::get_stt_status,
+            commands::stt::set_recording_paused,
+            commands::stt::get_recording_paused,
             commands::stt::verify_deepgram_key,
             commands::stt::verify_assemblyai_key,
             commands::stt::verify_claude_key,

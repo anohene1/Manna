@@ -14,6 +14,7 @@ import {
   BookOpenIcon,
   MusicIcon,
   ImageIcon,
+  ChevronDownIcon,
 } from "lucide-react"
 import { useQueueStore, useBroadcastStore, useBibleStore, useSongStore } from "@/stores"
 import { toVerseRenderData } from "@/hooks/use-broadcast"
@@ -156,12 +157,123 @@ function QueueItemCard({
   )
 }
 
+type QueueBlock =
+  | { kind: "flat"; item: QueueItem; index: number }
+  | {
+      kind: "group"
+      songId: string
+      firstIndex: number
+      items: { item: QueueItem; index: number }[]
+    }
+
+/**
+ * Build an ordered list of blocks from the flat queue. Contiguous
+ * song-stanza items sharing the same songId fold into a single group;
+ * verses/images and song-stanzas that don't share a neighbour stay flat.
+ */
+function buildBlocks(items: QueueItem[]): QueueBlock[] {
+  const blocks: QueueBlock[] = []
+  let i = 0
+  while (i < items.length) {
+    const item = items[i]
+    if (item.kind === "song-stanza") {
+      const songId = item.songId
+      const groupItems: { item: QueueItem; index: number }[] = []
+      const firstIndex = i
+      while (i < items.length) {
+        const next = items[i]
+        if (next.kind !== "song-stanza" || next.songId !== songId) break
+        groupItems.push({ item: next, index: i })
+        i++
+      }
+      if (groupItems.length > 1) {
+        blocks.push({ kind: "group", songId, firstIndex, items: groupItems })
+      } else {
+        // Single stanza — don't bother grouping, render flat.
+        blocks.push({ kind: "flat", item: groupItems[0].item, index: groupItems[0].index })
+      }
+    } else {
+      blocks.push({ kind: "flat", item, index: i })
+      i++
+    }
+  }
+  return blocks
+}
+
+function QueueSongGroup({
+  songId,
+  firstIndex,
+  items,
+  collapsed,
+  onToggle,
+  activeIndex,
+}: {
+  songId: string
+  firstIndex: number
+  items: { item: QueueItem; index: number }[]
+  collapsed: boolean
+  onToggle: () => void
+  activeIndex: number
+}) {
+  const songTitle = useSongStore((s) => s.songs.find((x) => x.id === songId)?.title ?? null)
+  const activeChild = items.find((x) => x.index === activeIndex)
+  const playedCount = activeChild ? activeChild.index - firstIndex + 1 : 0
+
+  return (
+    <div className="flex flex-col gap-1">
+      <button
+        onClick={onToggle}
+        className={cn(
+          "flex items-center gap-2 rounded-md border px-2 py-1.5 text-left text-xs transition-colors",
+          activeChild
+            ? "border-red-500/40 bg-red-500/5 hover:bg-red-500/10"
+            : "border-border bg-muted/30 hover:bg-muted/50",
+        )}
+      >
+        <ChevronDownIcon
+          className={cn("size-3 shrink-0 transition-transform", collapsed && "-rotate-90")}
+        />
+        <MusicIcon className="size-3 shrink-0 text-muted-foreground" />
+        <span className="truncate font-medium">{songTitle ?? `Song ${songId}`}</span>
+        <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
+          {activeChild ? `${playedCount}/${items.length}` : `${items.length} stanzas`}
+        </span>
+        {activeChild && (
+          <span className="shrink-0 text-[9px] font-semibold text-red-500">LIVE</span>
+        )}
+      </button>
+      {!collapsed && (
+        <div className="ml-2 flex flex-col gap-1 border-l border-border pl-2">
+          {items.map(({ item, index }) => (
+            <QueueItemCard
+              key={item.id}
+              item={item}
+              index={index}
+              isActive={index === activeIndex}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function QueuePanel() {
   const items = useQueueStore((s) => s.items)
   const activeIndex = useQueueStore((s) => s.activeIndex)
   const activeTranslationId = useBibleStore((s) => s.activeTranslationId)
   const [searchQuery, setSearchQuery] = useState("")
   const [searchResults, setSearchResults] = useState<Verse[]>([])
+  const [collapsedKeys, setCollapsedKeys] = useState<Set<string>>(() => new Set())
+
+  const toggleCollapsed = (key: string) => {
+    setCollapsedKeys((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
 
   const handleSearch = async () => {
     if (searchQuery.trim().length < 2) return
@@ -264,14 +376,30 @@ export function QueuePanel() {
               </div>
             </div>
           )}
-          {items.map((item, idx) => (
-            <QueueItemCard
-              key={item.id}
-              item={item}
-              index={idx}
-              isActive={idx === activeIndex}
-            />
-          ))}
+          {buildBlocks(items).map((block) => {
+            if (block.kind === "flat") {
+              return (
+                <QueueItemCard
+                  key={block.item.id}
+                  item={block.item}
+                  index={block.index}
+                  isActive={block.index === activeIndex}
+                />
+              )
+            }
+            const key = `${block.firstIndex}-${block.songId}`
+            return (
+              <QueueSongGroup
+                key={key}
+                songId={block.songId}
+                firstIndex={block.firstIndex}
+                items={block.items}
+                collapsed={collapsedKeys.has(key)}
+                onToggle={() => toggleCollapsed(key)}
+                activeIndex={activeIndex}
+              />
+            )
+          })}
         </div>
       </div>
     </div>

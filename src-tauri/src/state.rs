@@ -13,6 +13,10 @@ pub struct AppState {
     pub active_translation_id: i64,
     pub audio_active: Arc<AtomicBool>,
     pub stt_active: Arc<AtomicBool>,
+    /// When true, the audio-fanout thread finalizes its current MP3 segment and
+    /// stops writing audio while transcription keeps running. Flipping back to
+    /// false opens a fresh segment. Segments merge into one file on End Session.
+    pub recording_paused: Arc<AtomicBool>,
     /// Standalone test-capture loop (no STT). Toggled by `start_audio_test` /
     /// `stop_audio_test`. Separate from `audio_active` so the user can probe
     /// the mic while a transcription session is also running.
@@ -39,6 +43,7 @@ impl AppState {
             active_translation_id: 1, // Default to first translation (KJV)
             audio_active: Arc::new(AtomicBool::new(false)),
             stt_active: Arc::new(AtomicBool::new(false)),
+            recording_paused: Arc::new(AtomicBool::new(false)),
             audio_test_active: Arc::new(AtomicBool::new(false)),
             stt_provider: None,
             deepgram_api_key: None,

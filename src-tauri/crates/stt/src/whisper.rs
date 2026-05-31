@@ -29,7 +29,26 @@ fn i16_to_f32(samples: &[i16]) -> Vec<f32> {
     samples.iter().map(|&s| f32::from(s) / 32768.0).collect()
 }
 
-/// Extract transcript text, words, and average confidence from Whisper state.
+/// Mean token probability for a segment — Whisper's per-token confidence.
+/// Falls back to 0.0 if the token data is unavailable.
+fn segment_confidence(state: &WhisperState, segment: i32) -> f64 {
+    let n_tokens = state.full_n_tokens(segment).unwrap_or(0);
+    if n_tokens == 0 {
+        return 0.0;
+    }
+    let mut sum = 0.0_f64;
+    let mut count = 0u32;
+    for t in 0..n_tokens {
+        if let Ok(p) = state.full_get_token_prob(segment, t) {
+            sum += f64::from(p);
+            count += 1;
+        }
+    }
+    if count == 0 { 0.0 } else { sum / f64::from(count) }
+}
+
+/// Extract transcript text, words, and a real average confidence (mean token
+/// probability) from Whisper state.
 #[expect(clippy::cast_precision_loss, reason = "timestamps and word counts are small enough")]
 fn extract_segments(state: &WhisperState) -> (String, Vec<Word>, f64) {
     let n_segments = state.full_n_segments().unwrap_or(0);
@@ -44,7 +63,10 @@ fn extract_segments(state: &WhisperState) -> (String, Vec<Word>, f64) {
 
         let start_sec = start_ts as f64 / 100.0;
         let end_sec = end_ts as f64 / 100.0;
-        let confidence = 0.9;
+        // Real per-segment confidence from Whisper token probabilities (was
+        // previously hardcoded to 0.9, which made downstream confidence
+        // filtering useless and let hallucinations through).
+        let confidence = segment_confidence(state, i);
 
         let n_words = text.split_whitespace().count();
         if n_words > 0 {
@@ -73,6 +95,59 @@ fn extract_segments(state: &WhisperState) -> (String, Vec<Word>, f64) {
     };
 
     (full_text.trim().to_string(), words, avg_confidence)
+}
+
+/// Minimum mean-token-probability for a Whisper segment to be trusted. Below
+/// this, the text is almost always a hallucination on silence / ambient noise.
+const WHISPER_MIN_CONFIDENCE: f64 = 0.55;
+
+/// Phrases Whisper notoriously hallucinates on near-silent or noisy audio
+/// (training-data artifacts from YouTube captions). Compared after lowercasing
+/// and stripping surrounding punctuation/whitespace.
+const HALLUCINATION_PHRASES: &[&str] = &[
+    "thank you",
+    "thank you.",
+    "thanks for watching",
+    "thanks for watching!",
+    "thank you for watching",
+    "thank you for watching.",
+    "please subscribe",
+    "like and subscribe",
+    "see you next time",
+    "see you in the next video",
+    "bye",
+    "bye.",
+    "you",
+    "the end",
+    "subtitles by the amara.org community",
+    "♪",
+    "[music]",
+    "(music)",
+    "[silence]",
+    "[applause]",
+    "(applause)",
+];
+
+/// Decide whether a Whisper transcript segment is real speech worth emitting.
+/// Filters empty text, low-confidence output, and known hallucination phrases.
+fn is_real_speech(text: &str, confidence: f64) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    // Normalize for denylist comparison: lowercase, strip wrapping punctuation.
+    let normalized = trimmed
+        .to_lowercase()
+        .trim_matches(|c: char| !c.is_alphanumeric())
+        .to_string();
+    if HALLUCINATION_PHRASES.contains(&normalized.as_str())
+        || HALLUCINATION_PHRASES.contains(&trimmed.to_lowercase().as_str())
+    {
+        // Canned phrase — only allow it through with strong confidence, since
+        // "thank you" can be legitimately spoken.
+        return confidence >= 0.80;
+    }
+    confidence >= WHISPER_MIN_CONFIDENCE
 }
 
 /// Local Whisper STT provider.
@@ -267,16 +342,20 @@ impl SttProvider for WhisperProvider {
                 #[expect(clippy::cast_precision_loss, reason = "audio sample count fits in f64")]
                 let audio_duration_s = audio_i16.len() as f64 / 16_000.0;
                 log::info!(
-                    "[Whisper] Transcribed {audio_duration_s:.1}s audio in {elapsed:.1?}: \"{text}\""
+                    "[Whisper] Transcribed {audio_duration_s:.1}s audio in {elapsed:.1?} (conf {confidence:.2}): \"{text}\""
                 );
 
-                if !text.is_empty() {
+                if is_real_speech(&text, confidence) {
                     let _ = inf_event_tx.blocking_send(TranscriptEvent::Final {
                         transcript: text,
                         words,
                         confidence,
                         speech_final: true,
                     });
+                } else {
+                    log::info!(
+                        "[Whisper] Dropped low-confidence/hallucinated segment (conf {confidence:.2}): \"{text}\""
+                    );
                 }
 
                 let _ = inf_event_tx.blocking_send(TranscriptEvent::UtteranceEnd);
