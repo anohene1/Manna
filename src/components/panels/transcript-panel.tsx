@@ -18,8 +18,8 @@ import type { TranscriptSegment } from "@/types"
 import type { DetectionResult } from "@/types"
 
 const PROVIDER_LABEL: Record<string, string> = {
-  deepgram: "Deepgram · nova-2",
-  assemblyai: "AssemblyAI · universal",
+  deepgram: "Deepgram · nova-3",
+  assemblyai: "AssemblyAI · universal-streaming",
   whisper: "Whisper · local",
 }
 
@@ -151,18 +151,9 @@ export function TranscriptPanel() {
       }
     }
 
-    // Auto-add high-confidence detections (99%+) to history
-    // These are near-certain matches the pastor explicitly referenced
-    for (const d of detections) {
-      if (d.confidence >= 0.99 && d.book_number > 0) {
-        const trans = useBibleStore.getState().translations
-          .find(t => t.id === useBibleStore.getState().activeTranslationId)?.abbreviation ?? "KJV"
-        useBroadcastStore.getState().addToHistory({
-          reference: `${d.book_name} ${d.chapter}:${d.verse} (${trans})`,
-          segments: [{ text: d.verse_text || "" }],
-        })
-      }
-    }
+    // History intentionally NOT populated from detections — it now reflects
+    // only verses that actually went on screen (driven by `setLiveVerse` in
+    // broadcast-store).
 
     // Auto-navigate book search + select verse for preview/live
     // Handle direct, contextual (reading mode), and high-confidence quotation matches
