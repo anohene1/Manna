@@ -727,15 +727,17 @@ impl SessionDb {
     // ── Songs ─────────────────────────────────────────────────
 
     #[allow(clippy::type_complexity)]
+    #[allow(clippy::type_complexity)]
     pub fn list_songs(
         &self,
     ) -> Result<Vec<(
         String, String, Option<i64>, String, Option<String>, String,
         Option<String>, Option<String>, Option<String>, Option<String>,
+        String,
     )>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, source, number, title, author, data,
-                    tune, meter, scripture_ref, category
+                    tune, meter, scripture_ref, category, created_at
              FROM songs ORDER BY source, number, title",
         )?;
         let rows = stmt
@@ -751,6 +753,7 @@ impl SessionDb {
                     row.get::<_, Option<String>>(7)?,
                     row.get::<_, Option<String>>(8)?,
                     row.get::<_, Option<String>>(9)?,
+                    row.get::<_, String>(10)?,
                 ))
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -764,10 +767,11 @@ impl SessionDb {
     ) -> Result<(
         String, String, Option<i64>, String, Option<String>, String,
         Option<String>, Option<String>, Option<String>, Option<String>,
+        String,
     )> {
         Ok(self.conn.query_row(
             "SELECT id, source, number, title, author, data,
-                    tune, meter, scripture_ref, category
+                    tune, meter, scripture_ref, category, created_at
              FROM songs WHERE id = ?1",
             params![id],
             |row| {
@@ -782,6 +786,7 @@ impl SessionDb {
                     row.get::<_, Option<String>>(7)?,
                     row.get::<_, Option<String>>(8)?,
                     row.get::<_, Option<String>>(9)?,
+                    row.get::<_, String>(10)?,
                 ))
             },
         )?)

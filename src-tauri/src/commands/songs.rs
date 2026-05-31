@@ -18,6 +18,8 @@ pub struct SongRow {
     #[serde(rename = "scriptureRef")]
     pub scripture_ref: Option<String>,
     pub category: Option<String>,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
 }
 
 #[tauri::command]
@@ -27,7 +29,7 @@ pub fn list_songs(db: State<'_, DbState>) -> Result<Vec<SongRow>, String> {
         .list_songs()
         .map(|rows| {
             rows.into_iter()
-                .map(|(id, source, number, title, author, data, tune, meter, scripture_ref, category)| SongRow {
+                .map(|(id, source, number, title, author, data, tune, meter, scripture_ref, category, created_at)| SongRow {
                     id,
                     source,
                     number,
@@ -38,6 +40,7 @@ pub fn list_songs(db: State<'_, DbState>) -> Result<Vec<SongRow>, String> {
                     meter,
                     scripture_ref,
                     category,
+                    created_at,
                 })
                 .collect()
         })
@@ -49,7 +52,7 @@ pub fn get_song(db: State<'_, DbState>, id: String) -> Result<SongRow, String> {
     db.lock()
         .map_err(|e| e.to_string())?
         .get_song(&id)
-        .map(|(id, source, number, title, author, data, tune, meter, scripture_ref, category)| SongRow {
+        .map(|(id, source, number, title, author, data, tune, meter, scripture_ref, category, created_at)| SongRow {
             id,
             source,
             number,
@@ -60,6 +63,7 @@ pub fn get_song(db: State<'_, DbState>, id: String) -> Result<SongRow, String> {
             meter,
             scripture_ref,
             category,
+            created_at,
         })
         .map_err(|e| e.to_string())
 }

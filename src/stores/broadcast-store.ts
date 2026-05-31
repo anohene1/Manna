@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core"
 import type { BroadcastTheme, VerseRenderData, NotesSlide } from "@/types"
 import { BUILTIN_THEMES } from "@/lib/builtin-themes"
 import { useSessionStore } from "@/stores/session-store"
+import { useBibleStore } from "@/stores/bible-store"
 
 type SelectedElement = "verse" | "reference" | null
 
@@ -230,6 +231,34 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
     })
     if (liveVerse) {
       get().addToHistory(liveVerse)
+
+      // Mirror the live verse into the queue for quick re-reference. Source
+      // the full Verse from the bible store's selectedVerse — every verse
+      // pathway into setLiveVerse already calls `bibleActions.selectVerse()`
+      // first, so it's reliably populated. Dedupe by verse id.
+      const sel = useBibleStore.getState().selectedVerse
+      if (sel) {
+        const bareRef = `${sel.book_name} ${sel.chapter}:${sel.verse}`
+        if (liveVerse.reference.startsWith(bareRef)) {
+          void import("@/stores/queue-store").then(({ useQueueStore }) => {
+            const q = useQueueStore.getState()
+            const exists = q.items.some(
+              (it) => it.kind === "verse" && it.verse.id === sel.id,
+            )
+            if (exists) return
+            q.addItem({
+              kind: "verse",
+              id: crypto.randomUUID(),
+              verse: sel,
+              reference: bareRef,
+              confidence: 1,
+              source: "manual",
+              added_at: Date.now(),
+            })
+          })
+        }
+      }
+
       const session = useSessionStore.getState().activeSession
       // Record presentations during planned + live phases — operators often
       // preview verses on the projector before "Start Service", and those

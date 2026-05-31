@@ -126,14 +126,20 @@ function SongRow({
   onJump: () => void
 }) {
   return (
-    <li className="group flex items-center gap-2 px-3 py-2 transition-colors hover:bg-muted/40">
-      <MusicIcon className="size-3 shrink-0 text-muted-foreground" />
+    <li className="group flex items-center gap-3 p-3 transition-colors hover:bg-muted/40">
       <SourceBadge source={song.source} />
-      <button onClick={onOpen} className="flex-1 truncate text-left text-xs">
-        {song.number !== null && (
-          <span className="mr-2 tabular-nums text-muted-foreground">{song.number}</span>
+      <button onClick={onOpen} className="min-w-0 flex-1 text-left">
+        <div className="flex items-baseline gap-2">
+          {song.number !== null && (
+            <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
+              {song.number}
+            </span>
+          )}
+          <span className="truncate text-sm font-medium">{song.title}</span>
+        </div>
+        {song.author && (
+          <div className="truncate text-xs text-muted-foreground">{song.author}</div>
         )}
-        {song.title}
       </button>
       <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
         <Button

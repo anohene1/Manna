@@ -13,6 +13,7 @@ interface SongRowRpc {
   meter?: string | null
   scriptureRef?: string | null
   category?: string | null
+  createdAt?: string
 }
 
 function rowToSong(row: SongRowRpc): Song | null {
@@ -46,6 +47,9 @@ function rowToSong(row: SongRowRpc): Song | null {
     meter: row.meter ?? null,
     scriptureRef: row.scriptureRef ?? null,
     category: row.category ?? null,
+    createdAt: row.createdAt
+      ? Date.parse(`${row.createdAt.replace(" ", "T")}Z`) || 0
+      : 0,
   }
 }
 

@@ -53,7 +53,11 @@ export function OnlineSearchResults({
   }, [query])
 
   const importedOnline = useMemo(
-    () => songs.filter((s) => s.source === "genius" || s.source === "lrclib"),
+    () =>
+      songs
+        .filter((s) => s.source === "genius" || s.source === "lrclib")
+        .slice()
+        .sort((a, b) => b.createdAt - a.createdAt),
     [songs],
   )
 

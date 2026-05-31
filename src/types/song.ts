@@ -22,6 +22,8 @@ export interface Song {
   meter: string | null
   scriptureRef: string | null
   category: string | null
+  /** Epoch ms parsed from the DB's ISO `created_at` column. 0 if unparseable. */
+  createdAt: number
 }
 
 export interface GeniusHit {
