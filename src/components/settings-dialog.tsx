@@ -37,6 +37,7 @@ import {
   BrainCircuitIcon,
   Loader2Icon,
   HardDriveIcon,
+  MonitorIcon,
   XIcon,
 } from "lucide-react"
 import { useSettingsStore, persistDeepgramApiKey, persistAssemblyAiApiKey, persistClaudeApiKey, persistDeepseekApiKey, persistGeniusToken, persistEnabledHymnals, persistAutoMode, persistConfidenceThreshold, persistSttProvider, persistPexelsApiKey, persistUnsplashApiKey, persistBraveApiKey } from "@/stores"
@@ -48,12 +49,13 @@ import type { HymnalSource } from "@/types"
 import { useTutorialStore } from "@/stores/tutorial-store"
 import { useSettingsDialogStore } from "@/lib/settings-dialog"
 import type { DeviceInfo } from "@/types/audio"
+import { ProjectorCalibrationSection } from "@/components/settings/projector-calibration"
 
 /* -------------------------------------------------------------------------- */
 /*  Nav definition                                                            */
 /* -------------------------------------------------------------------------- */
 
-type NavSection = "audio" | "speech" | "bible" | "display" | "hymnals" | "api-keys" | "remote" | "storage" | "help"
+type NavSection = "audio" | "speech" | "bible" | "display" | "hymnals" | "api-keys" | "remote" | "storage" | "projector" | "help"
 
 const navItems: { name: string; id: NavSection; icon: React.ReactNode }[] = [
   {
@@ -75,6 +77,11 @@ const navItems: { name: string; id: NavSection; icon: React.ReactNode }[] = [
     name: "Display Mode",
     id: "display",
     icon: <TvIcon strokeWidth={2} />,
+  },
+  {
+    name: "Projector",
+    id: "projector",
+    icon: <MonitorIcon strokeWidth={2} />,
   },
   {
     name: "Hymnals",
@@ -913,6 +920,7 @@ const sectionTitles: Record<NavSection, string> = {
   remote: "Remote Control",
   "api-keys": "API Keys",
   storage: "Storage",
+  projector: "Projector",
   help: "Help",
 }
 
@@ -1473,6 +1481,7 @@ const sectionComponents: Record<NavSection, React.FC> = {
   remote: RemoteControlSection,
   "api-keys": ApiKeysSection,
   storage: StoragePanel,
+  projector: ProjectorCalibrationSection,
   help: HelpSection,
 }
 
