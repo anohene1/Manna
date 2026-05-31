@@ -200,12 +200,18 @@ function buildBlocks(items: QueueItem[]): QueueBlock[] {
   return blocks
 }
 
-/** Collapse keys for every song GROUP in the queue, in order. Key matches the
- *  one used in render: `${firstIndex}-${songId}`. */
+/** Stable key for a song group — keyed by the first stanza's item.id (UUID),
+ *  so removing/reordering items elsewhere in the queue doesn't shift the key
+ *  and lose the collapsed state. */
+function groupKey(block: Extract<QueueBlock, { kind: "group" }>): string {
+  return `${block.songId}:${block.items[0].item.id}`
+}
+
+/** Collapse keys for every song GROUP in the queue, in order. */
 function groupKeys(items: QueueItem[]): string[] {
   return buildBlocks(items)
     .filter((b): b is Extract<QueueBlock, { kind: "group" }> => b.kind === "group")
-    .map((b) => `${b.firstIndex}-${b.songId}`)
+    .map(groupKey)
 }
 
 function QueueSongGroup({
@@ -287,11 +293,15 @@ export function QueuePanel() {
       const newest = keys[keys.length - 1]
       setCollapsedKeys(new Set(keys.filter((k) => k !== newest)))
       // Align the new group's HEADER to the top of the viewport so it starts
-      // from its first stanza (not scrolled to the bottom of the list).
+      // from its first stanza. Double rAF: the first frame lets the
+      // collapse-others state update commit + paint (the list shrinks), the
+      // second scrolls against the settled layout so the group lands at the top.
       requestAnimationFrame(() => {
-        scrollRef.current
-          ?.querySelector('[data-newest-group="true"]')
-          ?.scrollIntoView({ block: "start" })
+        requestAnimationFrame(() => {
+          scrollRef.current
+            ?.querySelector('[data-newest-group="true"]')
+            ?.scrollIntoView({ block: "start" })
+        })
       })
     }
     prevGroupCountRef.current = keys.length
@@ -432,7 +442,7 @@ export function QueuePanel() {
                 />
               )
             }
-            const key = `${block.firstIndex}-${block.songId}`
+            const key = groupKey(block)
             return (
               <QueueSongGroup
                 key={key}

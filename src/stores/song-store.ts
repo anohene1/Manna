@@ -16,6 +16,17 @@ interface SongRowRpc {
   createdAt?: string
 }
 
+/** Parse SQLite's `datetime('now')` output (`"YYYY-MM-DD HH:MM:SS"`, UTC) into
+ *  epoch ms. Don't append `Z` if the row already carries a timezone marker —
+ *  rare in current code paths but guards future writers (manual SQL,
+ *  imports) that may stamp local time. */
+function parseCreatedAt(raw: string): number {
+  const trimmed = raw.trim()
+  const iso = trimmed.replace(" ", "T")
+  const hasTz = /([Zz]|[+-]\d{2}:?\d{2})$/.test(iso)
+  return Date.parse(hasTz ? iso : `${iso}Z`) || 0
+}
+
 function rowToSong(row: SongRowRpc): Song | null {
   let inner: {
     stanzas: Song["stanzas"]
@@ -47,9 +58,7 @@ function rowToSong(row: SongRowRpc): Song | null {
     meter: row.meter ?? null,
     scriptureRef: row.scriptureRef ?? null,
     category: row.category ?? null,
-    createdAt: row.createdAt
-      ? Date.parse(`${row.createdAt.replace(" ", "T")}Z`) || 0
-      : 0,
+    createdAt: row.createdAt ? parseCreatedAt(row.createdAt) : 0,
   }
 }
 

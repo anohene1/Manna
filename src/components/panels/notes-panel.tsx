@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { PencilIcon, SendIcon, StickyNoteIcon, SparklesIcon, Loader2Icon } from "lucide-react"
 import type { SessionNote } from "@/types/session"
 import { renderInlineMarkdown } from "@/lib/markdown-inline"
-import { generateLiveNotesNow } from "@/lib/ai-notes-scheduler"
+import { generateLiveNotesNow, describeGenerationContext } from "@/lib/ai-notes-scheduler"
 import { toast } from "sonner"
 
 type TimelineItem = { kind: "note"; data: SessionNote; timestamp: number }
@@ -71,12 +71,17 @@ export function NotesPanel() {
 
   const handleGenerate = async () => {
     setGenerating(true)
+    const ctx = describeGenerationContext()
     try {
       const created = await generateLiveNotesNow()
       if (created === 0) {
-        toast.info("No new points to add — transcript unchanged or AI saw nothing new.")
+        toast.info(
+          `No new points — AI saw nothing new beyond existing bullets. (${ctx})`,
+        )
       } else {
-        toast.success(`Added ${created} AI point${created > 1 ? "s" : ""}.`)
+        toast.success(
+          `Added ${created} AI point${created > 1 ? "s" : ""}. (${ctx})`,
+        )
         await loadData()
       }
     } catch (e) {

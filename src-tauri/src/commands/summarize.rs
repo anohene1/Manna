@@ -144,11 +144,28 @@ pub async fn summarize_sermon(
 
 // ── Live in-service notes ──────────────────────────────────────────────────
 
-const LIVE_NOTES_PROMPT: &str = "You assist a churchgoer who is writing personal sermon notes as the preacher speaks. Read the transcript-so-far and emit 1-2 NEW bullet points that capture material the existing bullets haven't already covered. Return empty array if no significant new material.\n\nReturn ONLY a JSON object: {\"bullets\": [\"...\", \"...\"]}\n\nVOICE — critical:\n- Write as if the listener jotted the point down for themselves later. First-person, declarative, action-oriented.\n- NEVER use reported speech (\"the preacher says...\", \"he emphasizes...\", \"pastor mentions...\"). Drop the speaker entirely; just write the truth/teaching itself.\n- Examples of GOOD style: \"Prayer is the daily anchor of faith\", \"Forgiveness frees the one who forgives\", \"Trust grows by surrendering control\", \"Worship is how we remember God's character\".\n- Examples of BAD style (DO NOT produce): \"The preacher emphasizes prayer is the anchor\", \"He says that forgiveness frees us\", \"Pastor mentions we should trust God\".\n\nRules:\n- Each bullet 6-14 words, plain text, no markdown.\n- Skip filler, transcription noise, scripture quotations.\n- Do not repeat or paraphrase any existing bullet below.\n- Focus on teachings/exhortations the listener would want to remember, not narration of what was said.\n";
+fn build_live_notes_prompt(max_bullets: u32, min_words: u32, max_words: u32) -> String {
+    format!(
+        "You assist a churchgoer writing personal sermon notes as the preacher speaks. Below is the transcript-so-far PLUS the bullets they have already captured. Your ONLY job is to surface NEW points that are NOT already covered. If everything substantive has already been captured, return an empty array — do NOT pad.\n\nReturn ONLY a JSON object: {{\"bullets\": [\"...\", \"...\"]}}\n\nCOUNT + LENGTH (scales with transcript size):\n- Emit AT MOST {max_bullets} bullet(s). Fewer is fine. Empty array is fine.\n- Each bullet should be roughly {min_words}-{max_words} words.\n\nVOICE — critical:\n- Write as the listener jotting the point down for themselves. First-person, declarative, action-oriented.\n- NEVER use reported speech (\"the preacher says...\", \"he emphasizes...\", \"pastor mentions...\"). Drop the speaker entirely; write the truth/teaching itself.\n- GOOD: \"Prayer is the daily anchor of faith\", \"Forgiveness frees the one who forgives\", \"Trust grows by surrendering control\".\n- BAD: \"The preacher emphasizes prayer is the anchor\", \"He says that forgiveness frees us\".\n\nNON-REPETITION — strict:\n- READ the existing bullets carefully before you draft. If a candidate bullet has the same MEANING as any existing bullet (even with different wording), DROP it.\n- Reject anything that re-summarizes the same idea, theme, or scripture point that's already in the list.\n- Prefer bullets that capture ONLY material from the most recent portion of the transcript (which contains new ground).\n\nRules:\n- Plain text, no markdown.\n- Skip filler, transcription noise, scripture quotations.\n- Focus on teachings/exhortations the listener would want to remember.\n- Empty array is a perfectly valid answer when nothing new has been said.\n"
+    )
+}
 
 #[derive(Deserialize)]
 struct LiveNotesPayload {
     bullets: Vec<String>,
+}
+
+/// Scale bullet count + per-bullet word length to the size of the transcript.
+/// Returns `(max_bullets, min_words, max_words)`. Tuned for typical sermon
+/// pacing — a fresh service produces tight one-liners, a long sermon allows
+/// a few denser bullets per click.
+fn live_notes_tier(transcript_chars: usize) -> (u32, u32, u32) {
+    match transcript_chars {
+        0..=999 => (1, 5, 9),
+        1000..=3999 => (2, 6, 12),
+        4000..=9999 => (3, 7, 14),
+        _ => (4, 9, 18),
+    }
 }
 
 #[tauri::command]
@@ -163,6 +180,9 @@ pub async fn generate_live_notes(
     if transcript.trim().is_empty() {
         return Ok(Vec::new());
     }
+
+    let (max_bullets, min_words, max_words) = live_notes_tier(transcript.chars().count());
+    let prompt_head = build_live_notes_prompt(max_bullets, min_words, max_words);
 
     let client = reqwest::Client::builder()
         .timeout(REQUEST_TIMEOUT)
@@ -186,8 +206,10 @@ pub async fn generate_live_notes(
     } else {
         format!("- {}", existing_bullets.join("\n- "))
     };
+    // Put existing bullets FIRST in the user message so the model reads them
+    // before considering the transcript — improves rejection of duplicates.
     let content = format!(
-        "{LIVE_NOTES_PROMPT}\nExisting bullets:\n{existing_block}\n\nTranscript so far:\n{truncated}"
+        "EXISTING BULLETS (must not be repeated or paraphrased):\n{existing_block}\n\n{prompt_head}\nTranscript so far:\n{truncated}"
     );
 
     let mut last_error = String::new();
@@ -195,13 +217,13 @@ pub async fn generate_live_notes(
     for model in MODELS {
         let body = DeepSeekRequest {
             model,
-            max_tokens: 256,
+            max_tokens: 512,
             messages: vec![Message {
                 role: "user",
                 content: content.clone(),
             }],
             response_format: ResponseFormat { kind: "json_object" },
-            temperature: 0.4,
+            temperature: 0.75,
         };
 
         let resp = client
@@ -223,12 +245,21 @@ pub async fn generate_live_notes(
                     .ok_or_else(|| "Empty response from DeepSeek".to_string())?;
                 let payload: LiveNotesPayload = serde_json::from_str(&json_str)
                     .map_err(|e| format!("Bad JSON from DeepSeek: {e}"))?;
+                // Server-side dedup backstop: drop any bullet whose normalized
+                // form is identical to an existing bullet, OR whose first 6
+                // significant words overlap with any existing one.
+                let existing_norm: Vec<String> =
+                    existing_bullets.iter().map(|b| normalize_for_dedup(b)).collect();
                 let cleaned: Vec<String> = payload
                     .bullets
                     .into_iter()
                     .map(|b| b.trim().to_string())
                     .filter(|b| !b.is_empty())
-                    .take(2)
+                    .filter(|b| {
+                        let n = normalize_for_dedup(b);
+                        !existing_norm.iter().any(|e| dedup_overlap(e, &n))
+                    })
+                    .take(max_bullets as usize)
                     .collect();
                 return Ok(cleaned);
             }
@@ -251,4 +282,33 @@ pub async fn generate_live_notes(
     }
 
     Err(format!("DeepSeek live-notes failed: {last_error}"))
+}
+
+/// Lowercase + strip punctuation + collapse whitespace. Used by the dedup
+/// backstop so cosmetic differences ("The trust of God!" vs "trust of god")
+/// don't slip through.
+fn normalize_for_dedup(s: &str) -> String {
+    s.chars()
+        .map(|c| if c.is_alphanumeric() || c.is_whitespace() { c.to_ascii_lowercase() } else { ' ' })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// True when two normalized bullets are duplicates: equal, or share their
+/// first 6 significant words (when both bullets are long enough — at least
+/// 6 words each — so we don't swallow a short existing bullet that happens
+/// to be a prefix of a genuinely fuller new one).
+fn dedup_overlap(a: &str, b: &str) -> bool {
+    if a == b {
+        return true;
+    }
+    let words_a: Vec<&str> = a.split_whitespace().collect();
+    let words_b: Vec<&str> = b.split_whitespace().collect();
+    const HEAD_WORDS: usize = 6;
+    if words_a.len() < HEAD_WORDS || words_b.len() < HEAD_WORDS {
+        return false;
+    }
+    words_a[..HEAD_WORDS] == words_b[..HEAD_WORDS]
 }
