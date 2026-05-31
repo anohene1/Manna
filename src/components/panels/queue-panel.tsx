@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { invoke } from "@tauri-apps/api/core"
 import { PanelHeader } from "@/components/ui/panel-header"
 import { Badge } from "@/components/ui/badge"
@@ -200,6 +200,14 @@ function buildBlocks(items: QueueItem[]): QueueBlock[] {
   return blocks
 }
 
+/** Collapse keys for every song GROUP in the queue, in order. Key matches the
+ *  one used in render: `${firstIndex}-${songId}`. */
+function groupKeys(items: QueueItem[]): string[] {
+  return buildBlocks(items)
+    .filter((b): b is Extract<QueueBlock, { kind: "group" }> => b.kind === "group")
+    .map((b) => `${b.firstIndex}-${b.songId}`)
+}
+
 function QueueSongGroup({
   songId,
   firstIndex,
@@ -265,6 +273,24 @@ export function QueuePanel() {
   const [searchQuery, setSearchQuery] = useState("")
   const [searchResults, setSearchResults] = useState<Verse[]>([])
   const [collapsedKeys, setCollapsedKeys] = useState<Set<string>>(() => new Set())
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const prevGroupCountRef = useRef(0)
+
+  // When a new song group is added (groups append to the end), collapse the
+  // older groups so only the newest stays open, and scroll it into view. Saves
+  // the operator from hunting/scrolling past stale expanded songs mid-service.
+  useEffect(() => {
+    const keys = groupKeys(items)
+    if (keys.length > prevGroupCountRef.current && keys.length > 0) {
+      const newest = keys[keys.length - 1]
+      setCollapsedKeys(new Set(keys.filter((k) => k !== newest)))
+      requestAnimationFrame(() => {
+        const el = scrollRef.current
+        if (el) el.scrollTop = el.scrollHeight
+      })
+    }
+    prevGroupCountRef.current = keys.length
+  }, [items])
 
   const toggleCollapsed = (key: string) => {
     setCollapsedKeys((prev) => {
@@ -273,6 +299,12 @@ export function QueuePanel() {
       else next.add(key)
       return next
     })
+  }
+
+  const allGroupKeys = groupKeys(items)
+  const anyExpanded = allGroupKeys.some((k) => !collapsedKeys.has(k))
+  const toggleCollapseAll = () => {
+    setCollapsedKeys(anyExpanded ? new Set(allGroupKeys) : new Set())
   }
 
   const handleSearch = async () => {
@@ -311,6 +343,14 @@ export function QueuePanel() {
       <PanelHeader title="Queue">
         <div className="flex items-center gap-2">
           <Badge variant="outline">{items.length}</Badge>
+          {allGroupKeys.length > 0 && (
+            <button
+              onClick={toggleCollapseAll}
+              className="text-[0.625rem] text-muted-foreground transition-colors hover:text-foreground"
+            >
+              {anyExpanded ? "Collapse all" : "Expand all"}
+            </button>
+          )}
           {items.length > 0 && (
             <button
               onClick={() => useQueueStore.getState().clearQueue()}
@@ -361,7 +401,7 @@ export function QueuePanel() {
         </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
         <div className="flex flex-col gap-1.5 p-2">
           {items.length === 0 && (
             <div className="flex flex-col items-center gap-3 px-6 py-12 text-center">
