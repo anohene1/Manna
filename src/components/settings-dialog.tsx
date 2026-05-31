@@ -39,6 +39,7 @@ import {
   HardDriveIcon,
   MonitorIcon,
   XIcon,
+  PaletteIcon,
 } from "lucide-react"
 import { useSettingsStore, persistDeepgramApiKey, persistAssemblyAiApiKey, persistClaudeApiKey, persistDeepseekApiKey, persistGeniusToken, persistEnabledHymnals, persistAutoMode, persistConfidenceThreshold, persistSttProvider, persistPexelsApiKey, persistUnsplashApiKey, persistBraveApiKey } from "@/stores"
 import { checkForUpdates } from "@/hooks/use-updater"
@@ -50,12 +51,13 @@ import { useTutorialStore } from "@/stores/tutorial-store"
 import { useSettingsDialogStore } from "@/lib/settings-dialog"
 import type { DeviceInfo } from "@/types/audio"
 import { ProjectorCalibrationSection } from "@/components/settings/projector-calibration"
+import { BrandingSection } from "@/components/settings/branding"
 
 /* -------------------------------------------------------------------------- */
 /*  Nav definition                                                            */
 /* -------------------------------------------------------------------------- */
 
-type NavSection = "audio" | "speech" | "bible" | "display" | "hymnals" | "api-keys" | "remote" | "storage" | "projector" | "help"
+type NavSection = "audio" | "speech" | "bible" | "display" | "branding" | "hymnals" | "api-keys" | "remote" | "storage" | "projector" | "help"
 
 const navItems: { name: string; id: NavSection; icon: React.ReactNode }[] = [
   {
@@ -77,6 +79,11 @@ const navItems: { name: string; id: NavSection; icon: React.ReactNode }[] = [
     name: "Display Mode",
     id: "display",
     icon: <TvIcon strokeWidth={2} />,
+  },
+  {
+    name: "Branding",
+    id: "branding",
+    icon: <PaletteIcon strokeWidth={2} />,
   },
   {
     name: "Projector",
@@ -916,6 +923,7 @@ const sectionTitles: Record<NavSection, string> = {
   speech: "Speech Recognition",
   bible: "Bible Translation",
   display: "Display Mode",
+  branding: "Branding",
   hymnals: "Hymnals",
   remote: "Remote Control",
   "api-keys": "API Keys",
@@ -1477,6 +1485,7 @@ const sectionComponents: Record<NavSection, React.FC> = {
   speech: SpeechSection,
   bible: BibleSection,
   display: DisplayModeSection,
+  branding: BrandingSection,
   hymnals: HymnalsSection,
   remote: RemoteControlSection,
   "api-keys": ApiKeysSection,
