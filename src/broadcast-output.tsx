@@ -2,6 +2,8 @@ import { createRoot } from "react-dom/client"
 import { useRef, useEffect, useCallback } from "react"
 import { invoke } from "@tauri-apps/api/core"
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow"
+import { listen } from "@tauri-apps/api/event"
+import { insetsToTransform, IDENTITY_INSETS, type CalibrationInsets } from "@/lib/projector-calibration"
 import { renderVerse } from "@/lib/verse-renderer"
 import { renderNotes } from "@/lib/notes-renderer"
 import type { BroadcastTheme, VerseRenderData, NotesSlide } from "@/types/broadcast"
@@ -56,6 +58,60 @@ function drawTickerAnnouncement(
   const x1 = width - (scrollOffset % totalCycle)
   ctx.fillText(text, x1, y + bandHeight / 2)
   ctx.fillText(text, x1 + totalCycle, y + bandHeight / 2)
+}
+
+function drawCalibrationOverlay(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  insets: { top: number; right: number; bottom: number; left: number },
+) {
+  const x = insets.left * width
+  const y = insets.top * height
+  const w = width * (1 - insets.left - insets.right)
+  const h = height * (1 - insets.top - insets.bottom)
+
+  ctx.save()
+  ctx.fillStyle = "rgba(0,0,0,0.45)"
+  ctx.fillRect(0, 0, width, y)
+  ctx.fillRect(0, y + h, width, height - (y + h))
+  ctx.fillRect(0, y, x, h)
+  ctx.fillRect(x + w, y, width - (x + w), h)
+
+  ctx.strokeStyle = "#22d3ee"
+  ctx.lineWidth = Math.max(2, width * 0.002)
+  ctx.strokeRect(x, y, w, h)
+
+  ctx.strokeStyle = "rgba(34,211,238,0.35)"
+  ctx.lineWidth = Math.max(1, width * 0.001)
+  for (let i = 1; i < 3; i++) {
+    const gx = x + (w * i) / 3
+    ctx.beginPath(); ctx.moveTo(gx, y); ctx.lineTo(gx, y + h); ctx.stroke()
+    const gy = y + (h * i) / 3
+    ctx.beginPath(); ctx.moveTo(x, gy); ctx.lineTo(x + w, gy); ctx.stroke()
+  }
+
+  const m = Math.min(w, h) * 0.06
+  ctx.strokeStyle = "#22d3ee"
+  ctx.lineWidth = Math.max(2, width * 0.003)
+  const corners: Array<[number, number, number, number]> = [
+    [x, y, m, m],
+    [x + w, y, -m, m],
+    [x, y + h, m, -m],
+    [x + w, y + h, -m, -m],
+  ]
+  for (const [cx, cy, dx, dy] of corners) {
+    ctx.beginPath(); ctx.moveTo(cx + dx, cy); ctx.lineTo(cx, cy); ctx.lineTo(cx, cy + dy); ctx.stroke()
+  }
+
+  const ccx = x + w / 2
+  const ccy = y + h / 2
+  const cross = Math.min(w, h) * 0.04
+  ctx.beginPath()
+  ctx.moveTo(ccx - cross, ccy); ctx.lineTo(ccx + cross, ccy)
+  ctx.moveTo(ccx, ccy - cross); ctx.lineTo(ccx, ccy + cross)
+  ctx.stroke()
+  ctx.restore()
 }
 
 function drawSlideAnnouncement(
@@ -164,6 +220,9 @@ function BroadcastCanvas() {
   const tickerOffsetRef = useRef(0)
   const tickerRafRef = useRef<number | null>(null)
 
+  const calibrationRef = useRef<CalibrationInsets>(IDENTITY_INSETS)
+  const calibrationEditingRef = useRef(false)
+
   /** Paint the current `data + announcement` frame onto an arbitrary ctx. */
   const renderFrame = useCallback(
     (ctx: CanvasRenderingContext2D, width: number, height: number) => {
@@ -241,6 +300,18 @@ function BroadcastCanvas() {
     [logDebug],
   )
 
+  const applyCalibrationTransform = useCallback(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const fw = canvas.width || 1920
+    const fh = canvas.height || 1080
+    const t = insetsToTransform(calibrationRef.current, fw, fh)
+    const fx = (t.offsetX / fw) * 100
+    const fy = (t.offsetY / fh) * 100
+    canvas.style.transformOrigin = "0 0"
+    canvas.style.transform = `translate(${fx}%, ${fy}%) scale(${t.scale})`
+  }, [])
+
   const draw = useCallback(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -253,7 +324,11 @@ function BroadcastCanvas() {
       canvas.height = data.theme.resolution.height
     }
     renderFrame(ctx, canvas.width, canvas.height)
-  }, [renderFrame])
+    if (calibrationEditingRef.current) {
+      drawCalibrationOverlay(ctx, canvas.width, canvas.height, calibrationRef.current)
+    }
+    applyCalibrationTransform()
+  }, [renderFrame, applyCalibrationTransform])
 
   // Drive the ticker animation. Re-renders only while a ticker is active so
   // we don't burn CPU during normal verse display.
@@ -281,6 +356,20 @@ function BroadcastCanvas() {
       tickerRafRef.current = null
     }
   }, [draw])
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined
+    void listen<{ insets: CalibrationInsets; editing: boolean }>(
+      "projector:calibration",
+      (event) => {
+        calibrationRef.current = event.payload.insets ?? IDENTITY_INSETS
+        calibrationEditingRef.current = !!event.payload.editing
+        applyCalibrationTransform()
+        draw()
+      },
+    ).then((fn) => { unlisten = fn })
+    return () => { unlisten?.() }
+  }, [applyCalibrationTransform, draw])
 
   const preloadImage = useCallback((url: string, label: string) => {
     const cache = imageCacheRef.current
