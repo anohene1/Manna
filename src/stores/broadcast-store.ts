@@ -5,6 +5,8 @@ import type { BroadcastTheme, VerseRenderData, NotesSlide } from "@/types"
 import { BUILTIN_THEMES } from "@/lib/builtin-themes"
 import { useSessionStore } from "@/stores/session-store"
 import { useBibleStore } from "@/stores/bible-store"
+import { useSettingsStore } from "@/stores/settings-store"
+import { resolveBrandAsset } from "@/lib/brand"
 
 type SelectedElement = "verse" | "reference" | null
 
@@ -191,10 +193,13 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
     // Use plain `emit` instead of `emitTo(label, ...)` — Tauri v2 has known
     // reliability issues with label-targeted emits (tauri-apps/tauri#11379).
     // Broadcast windows filter by outputId in the payload instead.
+    const blankLogoUrl = resolveBrandAsset("logo", useSettingsStore.getState().brand.logoPath)
+
     void emit(`broadcast:verse-update:${outputId}`, {
       theme,
       verse: s.liveVerse,
       blankLogo: s.blankLogo,
+      blankLogoUrl,
       fullscreenImage: s.fullscreenImage,
       notes: s.liveNotes,
     }).catch((err) => console.warn("[broadcast-store]", err))

@@ -179,6 +179,7 @@ interface BroadcastPayload {
   theme: BroadcastTheme
   verse: VerseRenderData | null
   blankLogo?: boolean
+  blankLogoUrl?: string
   fullscreenImage?: { url: string; label: string } | null
   notes?: NotesSlide | null
 }
@@ -232,7 +233,8 @@ function BroadcastCanvas() {
         ctx.fillRect(0, 0, width, height)
         return
       }
-      const { theme, verse, blankLogo, fullscreenImage, notes } = data
+      const { theme, verse, blankLogo, blankLogoUrl, fullscreenImage, notes } = data
+      const logoUrl = blankLogoUrl || BLANK_LOGO_URL
       const announcement = announcementRef.current
 
       if (announcement && announcement.mode === "slide") {
@@ -270,7 +272,7 @@ function BroadcastCanvas() {
       if (blankLogo) {
         ctx.fillStyle = "#000"
         ctx.fillRect(0, 0, width, height)
-        const img = imageCacheRef.current.get(BLANK_LOGO_URL)
+        const img = imageCacheRef.current.get(logoUrl)
         if (img && img.complete && img.naturalWidth > 0) {
           const target = Math.min(width, height) * 0.99
           const aspect = img.naturalWidth / img.naturalHeight
@@ -467,7 +469,9 @@ function BroadcastCanvas() {
     const unlisten = currentWindow.listen<BroadcastPayload>(`broadcast:verse-update:${OUTPUT_ID}`, (event) => {
       latestData.current = event.payload
       preloadBackgroundImage(event.payload.theme)
-      if (event.payload.blankLogo) preloadImage(BLANK_LOGO_URL, "Blank logo")
+      if (event.payload.blankLogo) {
+        preloadImage(event.payload.blankLogoUrl || BLANK_LOGO_URL, "Blank logo")
+      }
       if (event.payload.fullscreenImage?.url) preloadImage(event.payload.fullscreenImage.url, "Fullscreen image")
       logDebug("Received broadcast:verse-update", {
         hasVerse: Boolean(event.payload.verse),
