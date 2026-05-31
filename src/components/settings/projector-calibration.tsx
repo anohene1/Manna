@@ -4,6 +4,7 @@ import { persistProjectorCalibration } from "@/stores/settings-store"
 import {
   insetsToTransform,
   dragToInsets,
+  moveInsets,
   IDENTITY_INSETS,
   type CalibrationHandle,
 } from "@/lib/projector-calibration"
@@ -74,6 +75,26 @@ export function ProjectorCalibrationSection() {
     window.addEventListener("pointerup", up)
   }
 
+  // Drag the rectangle body to reposition the safe area without resizing it
+  // (e.g. nudge a shrunk guide toward the center). Preserves width/height.
+  const startMove = (e: React.PointerEvent) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startY = e.clientY
+    const start = useSettingsStore.getState().projectorCalibration
+    const move = (ev: PointerEvent) => {
+      const dx = (ev.clientX - startX) / BOX_W
+      const dy = (ev.clientY - startY) / BOX_H
+      void persistProjectorCalibration(moveInsets({ dx, dy }, start), true)
+    }
+    const up = () => {
+      window.removeEventListener("pointermove", move)
+      window.removeEventListener("pointerup", up)
+    }
+    window.addEventListener("pointermove", move)
+    window.addEventListener("pointerup", up)
+  }
+
   const t = insetsToTransform(insets, BOX_W, BOX_H)
   const scalePct = Math.round(t.scale * 100)
 
@@ -90,7 +111,8 @@ export function ProjectorCalibrationSection() {
         style={{ width: BOX_W, height: BOX_H }}
       >
         <div
-          className="absolute border-2 border-cyan-400/80 bg-cyan-400/5"
+          onPointerDown={startMove}
+          className="absolute cursor-move border-2 border-cyan-400/80 bg-cyan-400/5"
           style={{
             left: `${insets.left * 100}%`,
             top: `${insets.top * 100}%`,
@@ -98,7 +120,7 @@ export function ProjectorCalibrationSection() {
             bottom: `${insets.bottom * 100}%`,
           }}
         >
-          <div className="flex h-full items-center justify-center px-3 text-center">
+          <div className="pointer-events-none flex h-full items-center justify-center px-3 text-center">
             <span className="font-serif text-[11px] leading-tight text-white/80">
               John 3:16 — For God so loved the world…
             </span>

@@ -93,3 +93,24 @@ export function dragToInsets(
 
   return clampInsets(next)
 }
+
+/** Translate the whole safe-area rectangle by a fractional delta, preserving
+ *  its width and height. Lets the operator reposition a shrunk guide (e.g.
+ *  nudge it toward the center) without resizing. The translation is clamped so
+ *  the rectangle never leaves the frame: moving right is bounded by the
+ *  current right inset, moving left by the current left inset (analogous
+ *  vertically). */
+export function moveInsets(
+  delta: { dx: number; dy: number },
+  current: CalibrationInsets,
+): CalibrationInsets {
+  // Available travel before a side hits the frame edge (inset reaches 0).
+  const dx = clamp(delta.dx, -current.left, current.right)
+  const dy = clamp(delta.dy, -current.top, current.bottom)
+  return {
+    left: current.left + dx,
+    right: current.right - dx,
+    top: current.top + dy,
+    bottom: current.bottom - dy,
+  }
+}
