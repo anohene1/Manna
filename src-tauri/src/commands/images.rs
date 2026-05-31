@@ -407,6 +407,74 @@ pub async fn save_image_to_library(
     })
 }
 
+/// Copy a disk-picked image file into the persistent library so it survives
+/// reload (single-file uploads were previously transient `asset:` URLs lost on
+/// reload). Reuses the same `library/images/` dir + sidecar format as
+/// `save_image_to_library`, so the imported file shows up in `list_library_images`.
+#[tauri::command]
+pub fn import_library_image(src_path: String) -> Result<ImageHit, String> {
+    let src = PathBuf::from(&src_path);
+    if !src.is_file() {
+        return Err(format!("Not a file: {src_path}"));
+    }
+    let ext = src
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_lowercase())
+        .unwrap_or_default();
+    if !IMAGE_EXTS.contains(&ext.as_str()) {
+        return Err("Refusing to import a non-image file".into());
+    }
+
+    let dir = library_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+
+    let label = src
+        .file_stem()
+        .and_then(|n| n.to_str())
+        .unwrap_or("image")
+        .to_string();
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    let slug = {
+        let s = slugify(&label);
+        if s.is_empty() { "image".to_string() } else { s }
+    };
+    let base = format!("{slug}-upload-{stamp}");
+    let file_path = dir.join(format!("{base}.{ext}"));
+    let sidecar_path = dir.join(format!("{base}.json"));
+
+    std::fs::copy(&src, &file_path)
+        .map_err(|e| format!("Copy {src_path} -> {}: {e}", file_path.display()))?;
+    let sidecar = LibrarySidecar {
+        label: label.clone(),
+        provider: "library".to_string(),
+        photographer: None,
+        photographer_url: None,
+        source_url: None,
+        saved_at: stamp,
+    };
+    let _ = std::fs::write(
+        &sidecar_path,
+        serde_json::to_string_pretty(&sidecar).unwrap_or_default(),
+    );
+
+    let path_str = file_path.to_string_lossy().to_string();
+    Ok(ImageHit {
+        id: format!("library-{base}"),
+        url: path_str.clone(),
+        thumbnail_url: path_str,
+        label,
+        provider: "library".to_string(),
+        photographer: None,
+        photographer_url: None,
+        width: 0,
+        height: 0,
+    })
+}
+
 #[tauri::command]
 pub fn list_library_images() -> Result<Vec<ImageHit>, String> {
     let dir = library_dir();

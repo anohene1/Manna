@@ -398,9 +398,7 @@ pub fn run() {
             commands::service_plan::plan_save_session_as_template,
             commands::assets::save_brand_asset,
             commands::assets::delete_brand_asset,
-            commands::assets::import_library_image,
-            commands::assets::list_brand_library_images,
-            commands::assets::delete_brand_library_image,
+            commands::images::import_library_image,
         ])
         .setup(|app| {
             use tauri::Manager;

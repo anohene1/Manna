@@ -1,8 +1,12 @@
-//! Managed local asset storage for church branding + a persistent image
-//! library. Brand assets live in `<app-data>/com.manna.app/brand/`, the
-//! uploaded image library in `<app-data>/com.manna.app/images/`. All paths sit
-//! under $APPDATA, which the asset-protocol scope already allows, so the
-//! frontend loads them via `convertFileSrc`.
+//! Managed local asset storage for church branding. Brand assets (logo, MoMo,
+//! Jesus) live in `<app-data>/com.manna.app/brand/`, under $APPDATA which the
+//! asset-protocol scope already allows, so the frontend loads them via
+//! `convertFileSrc`.
+//!
+//! NOTE: the persistent *image library* (saved-from-online + disk uploads)
+//! lives in `images.rs` (`library/images/` dir, `list_library_images`,
+//! `save_image_to_library`, `import_library_image`). This module is brand-only
+//! to avoid two competing libraries.
 
 use std::path::{Path, PathBuf};
 
@@ -12,18 +16,11 @@ const IMAGE_EXTS: &[&str] = &[
     "heif", "svg", "ico", "jfif", "apng",
 ];
 
-fn app_root() -> PathBuf {
+fn brand_dir() -> PathBuf {
     dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("com.manna.app")
-}
-
-fn brand_dir() -> PathBuf {
-    app_root().join("brand")
-}
-
-fn library_dir() -> PathBuf {
-    app_root().join("images")
+        .join("brand")
 }
 
 fn ext_of(p: &Path) -> String {
@@ -73,13 +70,6 @@ impl BrandKind {
     }
 }
 
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LibraryImage {
-    pub path: String,
-    pub label: String,
-}
-
 /// Copy a picked file into `brand/<kind>.<ext>`, returning the stored path.
 /// Removes any prior brand file for this kind (any extension) first.
 #[tauri::command]
@@ -112,62 +102,6 @@ pub fn delete_brand_asset(kind: BrandKind) -> Result<(), String> {
             }
         }
     }
-    Ok(())
-}
-
-/// Copy a picked file into the managed image library as `<uuid>.<ext>`.
-#[tauri::command]
-pub fn import_library_image(src_path: String) -> Result<String, String> {
-    let ext = ext_of(&PathBuf::from(&src_path));
-    if !IMAGE_EXTS.contains(&ext.as_str()) {
-        return Err("Refusing to import a non-image file".into());
-    }
-    let name = format!("{}.{ext}", uuid::Uuid::new_v4());
-    copy_image_into(&src_path, &library_dir(), &name)
-}
-
-/// List the managed image library (filename stem as label, absolute path).
-#[tauri::command]
-pub fn list_brand_library_images() -> Result<Vec<LibraryImage>, String> {
-    let dir = library_dir();
-    let mut out = Vec::new();
-    let entries = match std::fs::read_dir(&dir) {
-        Ok(e) => e,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(out),
-        Err(e) => return Err(e.to_string()),
-    };
-    for entry in entries.flatten() {
-        let p = entry.path();
-        if p.is_file() && is_image(&p) {
-            out.push(LibraryImage {
-                label: p
-                    .file_stem()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("image")
-                    .to_string(),
-                path: p.to_string_lossy().into_owned(),
-            });
-        }
-    }
-    out.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
-    Ok(out)
-}
-
-/// Delete a library image. Validates the path is inside the managed library
-/// dir (canonicalized containment) before unlinking — no traversal.
-#[tauri::command]
-pub fn delete_brand_library_image(path: String) -> Result<(), String> {
-    let target = PathBuf::from(&path);
-    let canon_target = target
-        .canonicalize()
-        .map_err(|e| format!("Canonicalize path: {e}"))?;
-    let canon_dir = library_dir()
-        .canonicalize()
-        .map_err(|e| format!("Canonicalize library dir: {e}"))?;
-    if !canon_target.starts_with(&canon_dir) {
-        return Err("Refusing to delete a file outside the image library".into());
-    }
-    std::fs::remove_file(&canon_target).map_err(|e| e.to_string())?;
     Ok(())
 }
 
