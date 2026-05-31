@@ -596,10 +596,10 @@ export function SessionDetail({ sessionId, sessionTitle, initialTab, onBack }: S
           <div className="flex flex-col gap-2 p-3">
             {session?.audioPath && session?.startedAt && (
               <SessionAudioPlayer
-                // Remount after a lazy merge so the <audio> element reloads
-                // instead of showing a stale/404'd src for the same path.
+                // Remount after a lazy merge so the player re-fetches the
+                // freshly-concatenated audio.
                 key={audioNonce}
-                audioPath={session.audioPath}
+                sessionId={sessionId}
                 // SQLite `datetime('now')` emits `"YYYY-MM-DD HH:MM:SS"` in
                 // UTC with no timezone marker. JS `new Date(...)` parses it as
                 // *local* time, but transcript `timestampMs` is a true UTC

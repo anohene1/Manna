@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use tauri::ipc::Response;
 use tauri::State;
 
 use rhema_notes::SessionDb;
@@ -102,6 +103,32 @@ pub fn finalize_session_audio(
             Ok(None)
         }
     }
+}
+
+/// Read a session's recorded audio as raw bytes for in-app playback.
+///
+/// Returned as a binary `Response` (efficient IPC, not a JSON number array),
+/// which `invoke` resolves to an `ArrayBuffer` the frontend wraps in a Blob.
+/// We serve bytes over IPC instead of an `asset:` URL because Tauri's asset
+/// protocol mishandles HTTP range requests for media on macOS WKWebView —
+/// seeking a longer recording re-reads from byte 0 and crashes the WebView
+/// renderer (tauri-apps/tauri#6375, #4826). A Blob URL seeks in-memory.
+#[tauri::command]
+pub fn read_session_audio(
+    db: State<'_, Mutex<SessionDb>>,
+    session_id: i64,
+) -> Result<Response, String> {
+    let path = {
+        let db = db.lock().map_err(|e| e.to_string())?;
+        let session = db.get_session(session_id).map_err(|e| e.to_string())?;
+        session
+            .audio_path
+            .map(PathBuf::from)
+            .unwrap_or_else(|| session_dir(session_id).join("audio.mp3"))
+    };
+    let bytes = std::fs::read(&path)
+        .map_err(|e| format!("Failed to read audio {}: {e}", path.display()))?;
+    Ok(Response::new(bytes))
 }
 
 /// Delete all recorded audio for a session (final file + any leftover
