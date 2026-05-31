@@ -198,24 +198,17 @@ export function ImagesPanel() {
       ],
     })
     if (typeof file !== "string") return
-    const name = file.split(/[/\\]/).pop()?.replace(/\.[^.]+$/, "") ?? "Image"
-    const parent = file.replace(/[/\\][^/\\]+$/, "")
-    const assetUrl = convertFileSrc(file)
-    const hit: ImageHit = {
-      id: `local-pick-${Date.now()}`,
-      url: assetUrl,
-      thumbnailUrl: assetUrl,
-      label: name,
-      provider: "local",
-      photographer: null,
-      photographerUrl: null,
-      width: 0,
-      height: 0,
-      localPath: file,
-      validationFolder: parent || undefined,
+    // Copy the picked file into the managed library so it persists across
+    // reloads (previously the transient asset URL was lost on reload). It then
+    // surfaces via list_library_images with a proper asset URL + validation
+    // folder, so just refresh the local tab.
+    try {
+      await invoke("import_library_image", { srcPath: file })
+    } catch (e) {
+      setError(typeof e === "string" ? e : e instanceof Error ? e.message : "Failed to import image")
+      return
     }
-    // Prepend to current hits so the picked image surfaces immediately.
-    setHits((prev) => [hit, ...prev.filter((h) => h.url !== hit.url)])
+    await search()
   }
 
   const resolveBroadcastUrl = async (hit: ImageHit): Promise<string> => {
