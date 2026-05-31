@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback } from "react"
+import { useEffect } from "react"
 import { useSettingsStore } from "@/stores"
 import { persistProjectorCalibration } from "@/stores/settings-store"
 import {
@@ -43,9 +43,9 @@ function handlePosition(
 
 export function ProjectorCalibrationSection() {
   const insets = useSettingsStore((s) => s.projectorCalibration)
-  const [showTest, setShowTest] = useState(false)
-  const dragRef = useRef<{ handle: CalibrationHandle; startX: number; startY: number; start: typeof insets } | null>(null)
 
+  // While this panel is open the projector shows the live calibration overlay
+  // (editing=true); on close we emit editing=false to hide it.
   useEffect(() => {
     void persistProjectorCalibration(useSettingsStore.getState().projectorCalibration, true)
     return () => {
@@ -53,35 +53,25 @@ export function ProjectorCalibrationSection() {
     }
   }, [])
 
-  useEffect(() => {
-    void persistProjectorCalibration(useSettingsStore.getState().projectorCalibration, true)
-  }, [showTest])
-
-  const onPointerMove = useCallback((e: PointerEvent) => {
-    const drag = dragRef.current
-    if (!drag) return
-    const dx = (e.clientX - drag.startX) / BOX_W
-    const dy = (e.clientY - drag.startY) / BOX_H
-    const next = dragToInsets(drag.handle, { dx, dy }, drag.start)
-    void persistProjectorCalibration(next, true)
-  }, [])
-
-  const onPointerUp = useCallback(() => {
-    dragRef.current = null
-    window.removeEventListener("pointermove", onPointerMove)
-    window.removeEventListener("pointerup", onPointerUp)
-  }, [onPointerMove])
-
   const startDrag = (handle: CalibrationHandle) => (e: React.PointerEvent) => {
     e.preventDefault()
-    dragRef.current = {
-      handle,
-      startX: e.clientX,
-      startY: e.clientY,
-      start: useSettingsStore.getState().projectorCalibration,
+    const startX = e.clientX
+    const startY = e.clientY
+    const start = useSettingsStore.getState().projectorCalibration
+    // Capture the listener references locally so removeEventListener always
+    // targets the exact functions we added, regardless of any re-render that
+    // happens mid-drag.
+    const move = (ev: PointerEvent) => {
+      const dx = (ev.clientX - startX) / BOX_W
+      const dy = (ev.clientY - startY) / BOX_H
+      void persistProjectorCalibration(dragToInsets(handle, { dx, dy }, start), true)
     }
-    window.addEventListener("pointermove", onPointerMove)
-    window.addEventListener("pointerup", onPointerUp)
+    const up = () => {
+      window.removeEventListener("pointermove", move)
+      window.removeEventListener("pointerup", up)
+    }
+    window.addEventListener("pointermove", move)
+    window.addEventListener("pointerup", up)
   }
 
   const t = insetsToTransform(insets, BOX_W, BOX_H)
@@ -134,18 +124,13 @@ export function ProjectorCalibrationSection() {
           {Math.round(insets.right * 100)} B{Math.round(insets.bottom * 100)} L
           {Math.round(insets.left * 100)}
         </span>
-        <div className="flex gap-2">
-          <Button size="sm" variant="outline" onClick={() => setShowTest((v) => !v)}>
-            {showTest ? "Hide test pattern" : "Show test pattern"}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => void persistProjectorCalibration(IDENTITY_INSETS, true)}
-          >
-            Reset
-          </Button>
-        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => void persistProjectorCalibration(IDENTITY_INSETS, true)}
+        >
+          Reset
+        </Button>
       </div>
     </div>
   )
