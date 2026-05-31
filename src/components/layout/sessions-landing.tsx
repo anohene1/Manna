@@ -26,7 +26,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { useSession } from "@/hooks/use-session"
-import { useSessionStore, useBroadcastStore } from "@/stores"
+import { useSessionStore, useBroadcastStore, useSettingsStore } from "@/stores"
+import { resolveBrandAsset, resolveChurchName } from "@/lib/brand"
 import { useProjectorPicker } from "@/lib/projector-picker"
 import { summaryFromJson } from "@/lib/summarize"
 import type { SermonSession } from "@/types/session"
@@ -58,6 +59,7 @@ export function SessionsLanding() {
   const clearSessionInMode = useSessionStore((s) => s.clearSessionInMode)
   const closeSessions = useSessionStore((s) => s.closeSessions)
   const workspaceUnlocked = useSessionStore((s) => s.workspaceUnlocked)
+  const brand = useSettingsStore((s) => s.brand)
 
   const [sessions, setSessions] = useState<SermonSession[]>([])
   const [stats, setStats] = useState<Record<number, SessionRowStats>>({})
@@ -301,10 +303,10 @@ export function SessionsLanding() {
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-12">
         <header className="flex flex-col items-center gap-3 text-center">
           <div className="rounded-full bg-card p-2 ring-2 ring-primary/30 ring-offset-4 ring-offset-background">
-            <img src="/manna-logo.png" alt="EWC Manna" className="size-16 rounded-full" />
+            <img src={resolveBrandAsset("logo", brand.logoPath)} alt={resolveChurchName(brand.churchName)} className="size-16 rounded-full" />
           </div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            Welcome to EWC Manna
+            Welcome to {resolveChurchName(brand.churchName)}
           </h1>
           <p className="max-w-md text-sm text-muted-foreground">
             Start a new service to begin live detection, or open a past session

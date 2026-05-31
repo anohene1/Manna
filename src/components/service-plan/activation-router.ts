@@ -1,5 +1,6 @@
 // src/components/service-plan/activation-router.ts
-import { useBroadcastStore, useBibleStore, useQueueStore } from "@/stores"
+import { useBroadcastStore, useBibleStore, useQueueStore, useSettingsStore } from "@/stores"
+import { resolveBrandAsset } from "@/lib/brand"
 import { parsePlanItem } from "@/types"
 import type { PlanItem } from "@/types"
 import { openNotesSelectionDrawer } from "@/lib/notes-selection-drawer"
@@ -64,12 +65,14 @@ export function activatePlanItem(item: PlanItem): void {
     }
 
     case "momo": {
-      broadcast.setFullscreenImage({ url: "/MOMO111.png", label: "MoMo" })
+      const brand = useSettingsStore.getState().brand
+      broadcast.setFullscreenImage({ url: resolveBrandAsset("momo", brand.momoImagePath), label: "MoMo" })
       return
     }
 
     case "jesus": {
-      broadcast.setFullscreenImage({ url: "/JESUSs.png", label: "Jesus" })
+      const brand = useSettingsStore.getState().brand
+      broadcast.setFullscreenImage({ url: resolveBrandAsset("jesus", brand.jesusImagePath), label: "Jesus" })
       return
     }
 
