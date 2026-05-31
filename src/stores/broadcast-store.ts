@@ -207,12 +207,10 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
   syncBroadcastOutput: () => {
     // Push persisted projector calibration (editing=false) so a freshly-opened
     // window applies it without the Settings panel being open.
-    void import("@/stores/settings-store").then(({ useSettingsStore }) => {
-      void emit("projector:calibration", {
-        insets: useSettingsStore.getState().projectorCalibration,
-        editing: false,
-      }).catch(() => {})
-    })
+    void emit("projector:calibration", {
+      insets: useSettingsStore.getState().projectorCalibration,
+      editing: false,
+    }).catch(() => {})
     get().syncBroadcastOutputFor("main")
     get().syncBroadcastOutputFor("alt")
   },
