@@ -8,6 +8,20 @@ import {
 
 type SttProvider = "deepgram" | "whisper" | "assemblyai"
 
+export interface BrandConfig {
+  churchName: string | null
+  logoPath: string | null
+  momoImagePath: string | null
+  jesusImagePath: string | null
+}
+
+const DEFAULT_BRAND: BrandConfig = {
+  churchName: null,
+  logoPath: null,
+  momoImagePath: null,
+  jesusImagePath: null,
+}
+
 interface SettingsState {
   deepgramApiKey: string | null
   assemblyAiApiKey: string | null
@@ -29,6 +43,7 @@ interface SettingsState {
   enabledHymnals: string[]
   recordAudio: boolean
   projectorCalibration: CalibrationInsets
+  brand: BrandConfig
 
   setDeepgramApiKey: (key: string | null) => void
   setAssemblyAiApiKey: (key: string | null) => void
@@ -50,6 +65,7 @@ interface SettingsState {
   setEnabledHymnals: (ids: string[]) => void
   setRecordAudio: (v: boolean) => void
   setProjectorCalibration: (insets: CalibrationInsets) => void
+  setBrand: (brand: BrandConfig) => void
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
@@ -73,6 +89,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   enabledHymnals: ["ghs", "mhb", "sankey", "sda"],
   recordAudio: true,
   projectorCalibration: IDENTITY_INSETS,
+  brand: DEFAULT_BRAND,
 
   setDeepgramApiKey: (deepgramApiKey) => set({ deepgramApiKey }),
   setAssemblyAiApiKey: (assemblyAiApiKey) => set({ assemblyAiApiKey }),
@@ -94,6 +111,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setEnabledHymnals: (enabledHymnals) => set({ enabledHymnals }),
   setRecordAudio: (recordAudio) => set({ recordAudio }),
   setProjectorCalibration: (projectorCalibration) => set({ projectorCalibration }),
+  setBrand: (brand) => set({ brand }),
 }))
 
 // ── Shared Tauri store instance ────────────────────────────────────────
@@ -131,6 +149,7 @@ export async function hydrateSettings(): Promise<void> {
       enabledHymnals,
       recordAudio,
       projectorCalibration,
+      brand,
     ] = await Promise.all([
       store.get<string>("deepgramApiKey"),
       store.get<string>("assemblyAiApiKey"),
@@ -151,6 +170,7 @@ export async function hydrateSettings(): Promise<void> {
       store.get<string[]>("enabledHymnals"),
       store.get<boolean>("recordAudio"),
       store.get<CalibrationInsets>("projectorCalibration"),
+      store.get<BrandConfig>("brand"),
     ])
 
     const s = useSettingsStore.getState()
@@ -180,6 +200,14 @@ export async function hydrateSettings(): Promise<void> {
       typeof projectorCalibration.top === "number"
     ) {
       s.setProjectorCalibration(projectorCalibration)
+    }
+    if (brand && typeof brand === "object") {
+      s.setBrand({
+        churchName: typeof brand.churchName === "string" ? brand.churchName : null,
+        logoPath: typeof brand.logoPath === "string" ? brand.logoPath : null,
+        momoImagePath: typeof brand.momoImagePath === "string" ? brand.momoImagePath : null,
+        jesusImagePath: typeof brand.jesusImagePath === "string" ? brand.jesusImagePath : null,
+      })
     }
   } catch {
     console.warn("[settings] Failed to load persisted settings, using defaults")
@@ -430,6 +458,19 @@ export async function persistProjectorCalibration(
     await store.save()
   } catch {
     console.warn("[settings] Failed to persist projectorCalibration")
+  }
+}
+
+/** Persist a brand-config patch (merged over current) to disk. */
+export async function persistBrandConfig(patch: Partial<BrandConfig>): Promise<void> {
+  const next = { ...useSettingsStore.getState().brand, ...patch }
+  useSettingsStore.getState().setBrand(next)
+  try {
+    const store = await getStore()
+    await store.set("brand", next)
+    await store.save()
+  } catch {
+    console.warn("[settings] Failed to persist brand config")
   }
 }
 
