@@ -1,5 +1,10 @@
 import { create } from "zustand"
 import { load, type Store } from "@tauri-apps/plugin-store"
+import { emit } from "@tauri-apps/api/event"
+import {
+  type CalibrationInsets,
+  IDENTITY_INSETS,
+} from "@/lib/projector-calibration"
 
 type SttProvider = "deepgram" | "whisper" | "assemblyai"
 
@@ -23,6 +28,7 @@ interface SettingsState {
   sttProvider: SttProvider
   enabledHymnals: string[]
   recordAudio: boolean
+  projectorCalibration: CalibrationInsets
 
   setDeepgramApiKey: (key: string | null) => void
   setAssemblyAiApiKey: (key: string | null) => void
@@ -43,6 +49,7 @@ interface SettingsState {
   setSttProvider: (provider: SttProvider) => void
   setEnabledHymnals: (ids: string[]) => void
   setRecordAudio: (v: boolean) => void
+  setProjectorCalibration: (insets: CalibrationInsets) => void
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
@@ -65,6 +72,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   sttProvider: "deepgram",
   enabledHymnals: ["ghs", "mhb", "sankey", "sda"],
   recordAudio: true,
+  projectorCalibration: IDENTITY_INSETS,
 
   setDeepgramApiKey: (deepgramApiKey) => set({ deepgramApiKey }),
   setAssemblyAiApiKey: (assemblyAiApiKey) => set({ assemblyAiApiKey }),
@@ -85,6 +93,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setSttProvider: (sttProvider) => set({ sttProvider }),
   setEnabledHymnals: (enabledHymnals) => set({ enabledHymnals }),
   setRecordAudio: (recordAudio) => set({ recordAudio }),
+  setProjectorCalibration: (projectorCalibration) => set({ projectorCalibration }),
 }))
 
 // ── Shared Tauri store instance ────────────────────────────────────────
@@ -121,6 +130,7 @@ export async function hydrateSettings(): Promise<void> {
       cooldownMs,
       enabledHymnals,
       recordAudio,
+      projectorCalibration,
     ] = await Promise.all([
       store.get<string>("deepgramApiKey"),
       store.get<string>("assemblyAiApiKey"),
@@ -140,6 +150,7 @@ export async function hydrateSettings(): Promise<void> {
       store.get<number>("cooldownMs"),
       store.get<string[]>("enabledHymnals"),
       store.get<boolean>("recordAudio"),
+      store.get<CalibrationInsets>("projectorCalibration"),
     ])
 
     const s = useSettingsStore.getState()
@@ -163,6 +174,13 @@ export async function hydrateSettings(): Promise<void> {
       s.setEnabledHymnals(enabledHymnals)
     }
     if (typeof recordAudio === "boolean") useSettingsStore.setState({ recordAudio })
+    if (
+      projectorCalibration &&
+      typeof projectorCalibration === "object" &&
+      typeof projectorCalibration.top === "number"
+    ) {
+      s.setProjectorCalibration(projectorCalibration)
+    }
   } catch {
     console.warn("[settings] Failed to load persisted settings, using defaults")
   }
@@ -395,6 +413,23 @@ export async function persistRecordAudio(value: boolean): Promise<void> {
     await store.set("recordAudio", value)
   } catch {
     console.warn("[settings] Failed to persist recordAudio")
+  }
+}
+
+/** Persist projector calibration AND push it to the projector webview so the
+ *  output updates live. `editing` drives the on-projector calibration overlay. */
+export async function persistProjectorCalibration(
+  insets: CalibrationInsets,
+  editing: boolean,
+): Promise<void> {
+  useSettingsStore.getState().setProjectorCalibration(insets)
+  void emit("projector:calibration", { insets, editing }).catch(() => {})
+  try {
+    const store = await getStore()
+    await store.set("projectorCalibration", insets)
+    await store.save()
+  } catch {
+    console.warn("[settings] Failed to persist projectorCalibration")
   }
 }
 
