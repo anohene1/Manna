@@ -1,4 +1,5 @@
 pub mod analytics;
+pub mod assets;
 pub mod audio;
 pub mod bible;
 pub mod broadcast;
