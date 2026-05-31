@@ -215,6 +215,7 @@ function QueueSongGroup({
   collapsed,
   onToggle,
   activeIndex,
+  isNewest,
 }: {
   songId: string
   firstIndex: number
@@ -222,13 +223,14 @@ function QueueSongGroup({
   collapsed: boolean
   onToggle: () => void
   activeIndex: number
+  isNewest?: boolean
 }) {
   const songTitle = useSongStore((s) => s.songs.find((x) => x.id === songId)?.title ?? null)
   const activeChild = items.find((x) => x.index === activeIndex)
   const playedCount = activeChild ? activeChild.index - firstIndex + 1 : 0
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1" data-newest-group={isNewest ? "true" : undefined}>
       <button
         onClick={onToggle}
         className={cn(
@@ -284,9 +286,12 @@ export function QueuePanel() {
     if (keys.length > prevGroupCountRef.current && keys.length > 0) {
       const newest = keys[keys.length - 1]
       setCollapsedKeys(new Set(keys.filter((k) => k !== newest)))
+      // Align the new group's HEADER to the top of the viewport so it starts
+      // from its first stanza (not scrolled to the bottom of the list).
       requestAnimationFrame(() => {
-        const el = scrollRef.current
-        if (el) el.scrollTop = el.scrollHeight
+        scrollRef.current
+          ?.querySelector('[data-newest-group="true"]')
+          ?.scrollIntoView({ block: "start" })
       })
     }
     prevGroupCountRef.current = keys.length
@@ -437,6 +442,7 @@ export function QueuePanel() {
                 collapsed={collapsedKeys.has(key)}
                 onToggle={() => toggleCollapsed(key)}
                 activeIndex={activeIndex}
+                isNewest={key === allGroupKeys[allGroupKeys.length - 1]}
               />
             )
           })}
