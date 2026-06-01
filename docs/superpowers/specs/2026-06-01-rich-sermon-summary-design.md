@@ -80,7 +80,7 @@ Update the summary prompt to ask for:
 - `sermon_flow.response`: the invitation, altar call, prayer emphasis, or next step.
 - `devotional`: a SOAP-style personal follow-up based on the sermon.
 - `takeaways`: exactly 5 short practical bullets.
-- `quotes`: 3-5 verbatim share-worthy lines from the transcript, or an empty array if none are safe.
+- `quotes`: 3-5 verbatim share-worthy lines from the transcript, or an empty array if none are safe. Attribute quotes to the session speaker name when known; otherwise use `Pastor`, not `Preacher`.
 
 The prompt should explicitly prevent invented quotes, invented scripture references, and overconfident claims where the transcript is incomplete.
 
@@ -96,6 +96,7 @@ Compatibility rules:
 - If `sermon_flow` is missing, convert old `main_points` into main-point objects with empty optional details.
 - If `devotional` is missing, use empty strings and no reflection questions.
 - Keep old `takeaways` and `quotes` behavior.
+- If a quote speaker is missing or uses a generic label, normalize it to the session speaker name when known, otherwise `Pastor`.
 
 This avoids breaking archived sessions and lets the UI render old summaries gracefully.
 
