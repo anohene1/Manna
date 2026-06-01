@@ -1,10 +1,14 @@
 import { convertFileSrc } from "@tauri-apps/api/core"
 
-export type BrandAssetKind = "logo" | "momo" | "jesus"
+// `logo`  = app/sessions logo (landing screen, window chrome).
+// `blank` = projector blank-slide image (shown on the broadcast when idle).
+// These are intentionally distinct assets with distinct defaults.
+export type BrandAssetKind = "logo" | "blank" | "momo" | "jesus"
 
 /** Bundled fallback assets (served from `public/`). Used when no override is set. */
 export const BRAND_DEFAULTS: Record<BrandAssetKind, string> = {
-  logo: "/EWC-White.png",
+  logo: "/manna-logo.png",
+  blank: "/EWC-White.png",
   momo: "/MOMO111.png",
   jesus: "/JESUSs.png",
 }

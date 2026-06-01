@@ -11,8 +11,9 @@ const IMAGE_EXTS = [
   "avif", "heic", "heif", "svg", "ico", "jfif", "apng",
 ]
 
-const ASSET_ROWS: { kind: BrandAssetKind; label: string; field: "logoPath" | "momoImagePath" | "jesusImagePath" }[] = [
-  { kind: "logo", label: "Logo (blank slide)", field: "logoPath" },
+const ASSET_ROWS: { kind: BrandAssetKind; label: string; field: "logoPath" | "blankImagePath" | "momoImagePath" | "jesusImagePath" }[] = [
+  { kind: "logo", label: "App logo (sessions screen)", field: "logoPath" },
+  { kind: "blank", label: "Blank-slide image (projector)", field: "blankImagePath" },
   { kind: "momo", label: "MoMo slide image", field: "momoImagePath" },
   { kind: "jesus", label: "Jesus slide image", field: "jesusImagePath" },
 ]

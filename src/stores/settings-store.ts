@@ -10,7 +10,8 @@ type SttProvider = "deepgram" | "whisper" | "assemblyai"
 
 export interface BrandConfig {
   churchName: string | null
-  logoPath: string | null
+  logoPath: string | null        // app/sessions logo
+  blankImagePath: string | null  // projector blank-slide image
   momoImagePath: string | null
   jesusImagePath: string | null
 }
@@ -18,6 +19,7 @@ export interface BrandConfig {
 const DEFAULT_BRAND: BrandConfig = {
   churchName: null,
   logoPath: null,
+  blankImagePath: null,
   momoImagePath: null,
   jesusImagePath: null,
 }
@@ -205,6 +207,7 @@ export async function hydrateSettings(): Promise<void> {
       s.setBrand({
         churchName: typeof brand.churchName === "string" ? brand.churchName : null,
         logoPath: typeof brand.logoPath === "string" ? brand.logoPath : null,
+        blankImagePath: typeof brand.blankImagePath === "string" ? brand.blankImagePath : null,
         momoImagePath: typeof brand.momoImagePath === "string" ? brand.momoImagePath : null,
         jesusImagePath: typeof brand.jesusImagePath === "string" ? brand.jesusImagePath : null,
       })

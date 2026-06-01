@@ -193,7 +193,7 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
     // Use plain `emit` instead of `emitTo(label, ...)` — Tauri v2 has known
     // reliability issues with label-targeted emits (tauri-apps/tauri#11379).
     // Broadcast windows filter by outputId in the payload instead.
-    const blankLogoUrl = resolveBrandAsset("logo", useSettingsStore.getState().brand.logoPath)
+    const blankLogoUrl = resolveBrandAsset("blank", useSettingsStore.getState().brand.blankImagePath)
 
     void emit(`broadcast:verse-update:${outputId}`, {
       theme,

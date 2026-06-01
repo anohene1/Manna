@@ -56,6 +56,7 @@ fn copy_image_into(src: &str, dest_dir: &Path, file_name: &str) -> Result<String
 #[serde(rename_all = "lowercase")]
 pub enum BrandKind {
     Logo,
+    Blank,
     Momo,
     Jesus,
 }
@@ -64,6 +65,7 @@ impl BrandKind {
     fn stem(&self) -> &'static str {
         match self {
             BrandKind::Logo => "logo",
+            BrandKind::Blank => "blank",
             BrandKind::Momo => "momo",
             BrandKind::Jesus => "jesus",
         }
