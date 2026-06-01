@@ -23,6 +23,7 @@ export function SongsPanel() {
   const [tab, setTab] = useState<Tab>("local")
   const [pasteOpen, setPasteOpen] = useState(false)
   const [detailId, setDetailId] = useState<string | null>(null)
+  const [ewcOnly, setEwcOnly] = useState(false)
 
   const songs = useMemo(
     () =>
@@ -37,7 +38,18 @@ export function SongsPanel() {
     [allSongs, enabledHymnals],
   )
 
-  const filtered = useMemo(() => searchSongs(songs, query), [songs, query])
+  const filtered = useMemo(() => {
+    const base = searchSongs(songs, query)
+    // "EWC Live" is an artist — filter by author when the chip is active.
+    return ewcOnly
+      ? base.filter((s) => (s.author ?? "").toLowerCase().includes("ewc live"))
+      : base
+  }, [songs, query, ewcOnly])
+
+  const ewcCount = useMemo(
+    () => songs.filter((s) => (s.author ?? "").toLowerCase().includes("ewc live")).length,
+    [songs],
+  )
 
   return (
     <div className="flex h-full flex-col">
@@ -78,6 +90,20 @@ export function SongsPanel() {
         >
           Search Online
         </button>
+        {tab === "local" && (
+          <button
+            className={cn(
+              "ml-auto rounded px-2 py-1 transition-colors",
+              ewcOnly
+                ? "bg-primary font-semibold text-primary-foreground"
+                : "text-muted-foreground hover:bg-muted/50",
+            )}
+            onClick={() => setEwcOnly((v) => !v)}
+            title="Show only EWC Live songs"
+          >
+            EWC Live ({ewcCount})
+          </button>
+        )}
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
