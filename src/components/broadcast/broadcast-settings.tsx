@@ -22,7 +22,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
-import { useBroadcastStore } from "@/stores"
+import { useBroadcastStore, useSettingsStore } from "@/stores"
+import { resolveChurchName } from "@/lib/brand"
 import type { NdiAlphaMode, NdiFrameRate, NdiResolution, NdiSessionInfo, NdiStartRequest } from "@/types"
 import {
   MonitorIcon,
@@ -82,7 +83,11 @@ export function BroadcastSettings({
   const [monitors, setMonitors] = useState<Monitor[]>([])
   const [selectedMonitor, setSelectedMonitor] = useState("0")
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
-  const [ndiSourceName, setNdiSourceName] = useState("Rhema Output")
+  // Default NDI source names to the configured church name so feeds are
+  // branded out of the box (e.g. "Grace Chapel Output"). Operator can override.
+  const [ndiSourceName, setNdiSourceName] = useState(
+    () => `${resolveChurchName(useSettingsStore.getState().brand.churchName)} Output`,
+  )
   const [ndiResolution, setNdiResolution] = useState<NdiResolution>("r1080p")
   const [ndiFrameRate, setNdiFrameRate] = useState<NdiFrameRate>("fps24")
   const [ndiAlphaMode, setNdiAlphaMode] = useState<NdiAlphaMode>("straightAlpha")
@@ -96,7 +101,9 @@ export function BroadcastSettings({
   const [altOutputType, setAltOutputType] = useState<OutputType>("ndi")
   const [altSelectedMonitor, setAltSelectedMonitor] = useState("0")
   const [altIsPreviewOpen, setAltIsPreviewOpen] = useState(false)
-  const [altNdiSourceName, setAltNdiSourceName] = useState("Rhema Alt")
+  const [altNdiSourceName, setAltNdiSourceName] = useState(
+    () => `${resolveChurchName(useSettingsStore.getState().brand.churchName)} Alt`,
+  )
   const [altNdiResolution, setAltNdiResolution] = useState<NdiResolution>("r1080p")
   const [altNdiFrameRate, setAltNdiFrameRate] = useState<NdiFrameRate>("fps24")
   const [altNdiAlphaMode, setAltNdiAlphaMode] = useState<NdiAlphaMode>("straightAlpha")
@@ -631,7 +638,7 @@ export function BroadcastSettings({
                   <Input
                     value={ndiSourceName}
                     onChange={(e) => setNdiSourceName(e.target.value)}
-                    placeholder="Rhema Output"
+                    placeholder="Output"
                   />
                 </div>
                 <Button
@@ -797,7 +804,7 @@ export function BroadcastSettings({
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs text-muted-foreground">Source Name</label>
-                  <Input value={altNdiSourceName} onChange={(e) => setAltNdiSourceName(e.target.value)} placeholder="Rhema Alt" />
+                  <Input value={altNdiSourceName} onChange={(e) => setAltNdiSourceName(e.target.value)} placeholder="Alt" />
                 </div>
                 <Button
                   variant="outline"
