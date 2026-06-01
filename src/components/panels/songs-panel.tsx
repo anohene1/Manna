@@ -12,7 +12,7 @@ import { OnlineSearchResults } from "@/components/songs/online-search-results"
 import { SongDetailDrawer } from "@/components/songs/song-detail-drawer"
 import { SourceBadge } from "@/components/songs/source-badge"
 
-type Tab = "local" | "online"
+type Tab = "local" | "online" | "ewc"
 
 export function SongsPanel() {
   const allSongs = useSongStore((s) => s.songs)
@@ -23,7 +23,6 @@ export function SongsPanel() {
   const [tab, setTab] = useState<Tab>("local")
   const [pasteOpen, setPasteOpen] = useState(false)
   const [detailId, setDetailId] = useState<string | null>(null)
-  const [ewcOnly, setEwcOnly] = useState(false)
 
   const songs = useMemo(
     () =>
@@ -38,17 +37,16 @@ export function SongsPanel() {
     [allSongs, enabledHymnals],
   )
 
-  const filtered = useMemo(() => {
-    const base = searchSongs(songs, query)
-    // "EWC Live" is an artist — filter by author when the chip is active.
-    return ewcOnly
-      ? base.filter((s) => (s.author ?? "").toLowerCase().includes("ewc live"))
-      : base
-  }, [songs, query, ewcOnly])
-
-  const ewcCount = useMemo(
-    () => songs.filter((s) => (s.author ?? "").toLowerCase().includes("ewc live")).length,
+  // "EWC Live" is an artist — the EWC tab shows only songs by that author.
+  const ewcSongs = useMemo(
+    () => songs.filter((s) => (s.author ?? "").toLowerCase().includes("ewc live")),
     [songs],
+  )
+
+  // Local tab searches all local songs; EWC tab searches within EWC-Live songs.
+  const filtered = useMemo(
+    () => searchSongs(tab === "ewc" ? ewcSongs : songs, query),
+    [songs, ewcSongs, query, tab],
   )
 
   return (
@@ -90,40 +88,19 @@ export function SongsPanel() {
         >
           Search Online
         </button>
-        {tab === "local" && (
-          <button
-            className={cn(
-              "ml-auto rounded px-2 py-1 transition-colors",
-              ewcOnly
-                ? "bg-primary font-semibold text-primary-foreground"
-                : "text-muted-foreground hover:bg-muted/50",
-            )}
-            onClick={() => setEwcOnly((v) => !v)}
-            title="Show only EWC Live songs"
-          >
-            EWC Live ({ewcCount})
-          </button>
-        )}
+        <button
+          className={cn(
+            "rounded px-2 py-1 transition-colors",
+            tab === "ewc" ? "bg-muted font-semibold text-foreground" : "text-muted-foreground hover:bg-muted/50",
+          )}
+          onClick={() => setTab("ewc")}
+        >
+          EWC Live ({ewcSongs.length})
+        </button>
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
-        {tab === "local" ? (
-          filtered.length === 0 ? (
-            <EmptyLocal onPaste={() => setPasteOpen(true)} onOnline={() => setTab("online")} />
-          ) : (
-            <ul className="divide-y divide-border/40">
-              {filtered.map((song) => (
-                <SongRow
-                  key={song.id}
-                  song={song}
-                  onOpen={() => setDetailId(song.id)}
-                  onAdd={() => enqueueSong(song.id)}
-                  onJump={() => presentSongLive(song.id)}
-                />
-              ))}
-            </ul>
-          )
-        ) : (
+        {tab === "online" ? (
           <OnlineSearchResults
             query={query}
             onImported={(songId) => {
@@ -131,6 +108,26 @@ export function SongsPanel() {
               setDetailId(songId)
             }}
           />
+        ) : filtered.length === 0 ? (
+          tab === "ewc" ? (
+            <div className="px-4 py-12 text-center text-xs text-muted-foreground">
+              No EWC Live songs yet. Songs by the artist “EWC Live” appear here.
+            </div>
+          ) : (
+            <EmptyLocal onPaste={() => setPasteOpen(true)} onOnline={() => setTab("online")} />
+          )
+        ) : (
+          <ul className="divide-y divide-border/40">
+            {filtered.map((song) => (
+              <SongRow
+                key={song.id}
+                song={song}
+                onOpen={() => setDetailId(song.id)}
+                onAdd={() => enqueueSong(song.id)}
+                onJump={() => presentSongLive(song.id)}
+              />
+            ))}
+          </ul>
         )}
       </div>
 
