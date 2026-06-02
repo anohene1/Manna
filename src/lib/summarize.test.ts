@@ -133,14 +133,14 @@ describe("parseSummary", () => {
         takeaways: "bad",
         quotes: [
           { text: 99, speaker: "Speaker" },
-          { text: "Good word", speaker: "Preacher" },
+          { text: "Good word", speaker: "preacher" },
         ],
       })
     )
 
     expect(summary).toEqual({
-      title: "",
-      big_idea: "",
+      title: "Sermon",
+      big_idea: "Sermon",
       key_verses: [],
       sermon_flow: {
         opening: "",
@@ -194,7 +194,6 @@ describe("formatSummaryAsMarkdown", () => {
     expect(markdown).toContain("Christ anchors the church.")
     expect(markdown).toContain("## Sermon Flow")
     expect(markdown).toContain("### Devotional Follow-up")
-    expect(markdown).toContain("> Hold fast.")
-    expect(markdown).toContain("- Pastor Kwame")
+    expect(markdown).toContain("> “Hold fast.” — Pastor Kwame")
   })
 })

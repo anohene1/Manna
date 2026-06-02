@@ -115,9 +115,11 @@ export function parseSummary(raw: string): SermonSummary {
   }
   const json = cleaned.slice(start, end + 1)
   const parsed = JSON.parse(json) as Record<string, unknown>
+  const fallbackTitle = cleanString(parsed.topic) || "Sermon"
+  const title = cleanString(parsed.title) || fallbackTitle
   return withLegacyAccessors({
-    title: cleanString(parsed.title) || cleanString(parsed.topic),
-    big_idea: cleanString(parsed.big_idea) || cleanString(parsed.topic),
+    title,
+    big_idea: cleanString(parsed.big_idea) || cleanString(parsed.topic) || title,
     key_verses: normalizeKeyVerses(parsed.key_verses),
     sermon_flow: normalizeSermonFlow(parsed.sermon_flow, parsed.main_points),
     devotional: normalizeDevotional(parsed.devotional),
@@ -212,9 +214,9 @@ export function formatSummaryAsMarkdown(summary: SermonSummary): string {
   if (summary.quotes.length > 0) {
     lines.push("## Quotes")
     for (const quote of summary.quotes) {
-      lines.push(`> ${quote.text}`)
-      if (quote.speaker) lines.push(`- ${quote.speaker}`)
-      lines.push("")
+      const speaker = quote.speaker?.trim()
+      const attribution = speaker ? ` — ${speaker}` : ""
+      lines.push(`> “${quote.text}”${attribution}`, "")
     }
   }
 
@@ -306,7 +308,7 @@ function normalizeQuotes(value: unknown): SermonQuote[] {
 
 function normalizeSpeaker(value: unknown): string {
   const speaker = cleanString(value)
-  if (!speaker || speaker === "Preacher" || speaker === "Speaker")
+  if (!speaker || /^(preacher|speaker)$/i.test(speaker))
     return "Pastor"
   return speaker
 }
