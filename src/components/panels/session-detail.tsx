@@ -4,7 +4,13 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { ArrowLeftIcon, BookOpenIcon, MicIcon, BarChart3Icon, DownloadIcon, ClipboardIcon, FileTextIcon, FileJsonIcon, PrinterIcon, SparklesIcon, LoaderIcon, CopyIcon, CheckIcon, StopCircleIcon, RefreshCwIcon, SearchIcon, PencilIcon, TagIcon, XIcon, Trash2Icon, PlayIcon } from "lucide-react"
-import { summarizeTranscript, summaryFromJson, summaryToJson, type SermonSummary } from "@/lib/summarize"
+import {
+  formatSummaryAsMarkdown,
+  summarizeTranscript,
+  summaryFromJson,
+  summaryToJson,
+  type SermonSummary,
+} from "@/lib/summarize"
 import type { SermonSession, SessionDetection, SessionTranscriptSegment, SessionNote } from "@/types/session"
 import { SessionAudioPlayer } from "@/components/session-audio-player"
 import { emitAudioSeek } from "@/hooks/use-audio-seek"
@@ -55,28 +61,6 @@ function buildMarkdown(title: string, detections: SessionDetection[], notes: Ses
   }
 
   return lines.join("\n")
-}
-
-function formatSummaryAsMarkdown(s: SermonSummary): string {
-  const lines: string[] = []
-  lines.push(`## Topic`, s.topic, "")
-  if (s.key_verses.length > 0) {
-    lines.push(`## Key Verses`, ...s.key_verses.map((v) => `- ${v}`), "")
-  }
-  if (s.main_points.length > 0) {
-    lines.push(`## Main Points`, ...s.main_points.map((p) => `- ${p}`), "")
-  }
-  if (s.takeaways.length > 0) {
-    lines.push(`## Takeaways`, ...s.takeaways.map((t) => `- ${t}`), "")
-  }
-  if (s.quotes && s.quotes.length > 0) {
-    lines.push(`## Quotes`, "")
-    for (const q of s.quotes) {
-      const attr = q.speaker?.trim() ? ` — ${q.speaker.trim()}` : ""
-      lines.push(`> “${q.text}”${attr}`, "")
-    }
-  }
-  return lines.join("\n").trim()
 }
 
 function downloadFile(content: string, filename: string, mime: string) {
@@ -770,8 +754,9 @@ export function SessionDetail({ sessionId, sessionTitle, initialTab, onBack }: S
                             <li
                               key={i}
                               className="rounded-full bg-primary/12 px-2 py-0.5 text-[11px] font-medium text-primary"
+                              title={v.reason || undefined}
                             >
-                              {v}
+                              {v.reference}
                             </li>
                           ))}
                         </ul>

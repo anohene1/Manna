@@ -613,7 +613,7 @@ async function fetchSessionStats(session: SermonSession): Promise<SessionRowStat
     const detections = await invoke<DetRow[]>("get_session_detections", { sessionId: session.id })
     const presentedCount = detections.filter((d) => d.wasPresented).length
     const summary = summaryFromJson(session.summary)
-    const topVerse = summary?.key_verses?.[0] ?? null
+    const topVerse = summary?.key_verses?.[0]?.reference ?? null
     let durationMinutes: number | null = null
     if (session.startedAt && session.endedAt) {
       const start = new Date(session.startedAt).getTime()
@@ -646,4 +646,3 @@ function defaultTitle(): string {
   const time = now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })
   return `${date} — ${time}`
 }
-

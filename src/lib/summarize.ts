@@ -291,7 +291,7 @@ function normalizeDevotional(value: unknown): SermonDevotional {
 function normalizeQuotes(value: unknown): SermonQuote[] {
   if (!Array.isArray(value)) return []
   return value
-    .map((quote) => {
+    .map((quote): SermonQuote | null => {
       if (typeof quote === "string") {
         const text = quote.trim()
         return text ? { text, speaker: "Pastor" } : null
