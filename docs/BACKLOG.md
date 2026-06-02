@@ -86,13 +86,11 @@ Unscheduled work. Grouped by type. Items pulled from EXECUTION.md history and th
 - **Est:** 1–2 hr per translation on MPS (Qwen3), ~1 day total
 - **Priority:** low — current approach works, ref mapping is lossless
 
-### Proper INT8 feature-extraction quantization for Qwen3
+### ~~Proper INT8 feature-extraction quantization for Qwen3~~ ✅ shipped 2026-06-02
 
-- Current state (2026-04-21): bundled `models/qwen3-embedding-0.6b-int8/model_quantized.onnx` is a **generation export** with KV cache inputs — wrong for embeddings. FP32 forced as default in loader. INT8 demoted to warn-logged fallback.
-- Fix: run `optimum-cli onnxruntime quantize --arm64` against the FP32 **feature-extraction** ONNX (3 inputs, 1 output), not the default generation export. Replace bundled INT8 file.
-- Payoff: 4× RAM savings on low-spec church PCs without quality loss (per learning #28), identical to upstream rhema's default deployment — but with a _correct_ export this time.
-- **Est:** ~1 hr (quantize + verify inputs + commit)
-- **Priority:** medium — affects all church PCs, plus benefits upstream rhema users who inherit the same broken file
+- Shipped: `data/quantize-qwen3-int8.py` converts the feature-extraction ONNX graph from FP16 to FP32 before ONNX Runtime dynamic INT8 quantization, avoiding the FLOAT16 load errors hit by the naive quantizer.
+- Runtime now prefers Qwen3 INT8, validates model signatures to reject generation/KV-cache exports, and falls back to Qwen3 FP32/MiniLM if a stale bad INT8 file is present.
+- Verified: INT8 graph has `input_ids`, `attention_mask`, `position_ids` → `last_hidden_state`; Rust precompute smoke loads it; local app logs show 31,102 KJV vectors loaded with the INT8 model.
 
 ### ~~EmbeddingGemma-300M model swap~~ ❌ rejected 2026-04-19
 

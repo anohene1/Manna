@@ -15,9 +15,9 @@ use ort::value::Tensor;
 use tokenizers::Tokenizer;
 
 #[cfg(feature = "onnx")]
-use crate::error::DetectionError;
-#[cfg(feature = "onnx")]
 use super::embedder::TextEmbedder;
+#[cfg(feature = "onnx")]
+use crate::error::DetectionError;
 
 /// ONNX-based text embedder.
 ///
@@ -82,11 +82,7 @@ impl OnnxEmbedder {
             .map_err(|e| DetectionError::Internal(format!("tokenizer load: {e}")))?;
 
         // Ensure the tokenizer pads and truncates to our max length.
-        let pad_id = tokenizer
-            .get_vocab(true)
-            .get("[PAD]")
-            .copied()
-            .unwrap_or(0);
+        let pad_id = tokenizer.get_vocab(true).get("[PAD]").copied().unwrap_or(0);
         let pad_token = tokenizer
             .id_to_token(pad_id)
             .unwrap_or_else(|| "[PAD]".to_string());
@@ -123,6 +119,15 @@ impl OnnxEmbedder {
             );
         }
 
+        let input_names: Vec<&str> = session.inputs().iter().map(|input| input.name()).collect();
+        let output_names: Vec<&str> = session
+            .outputs()
+            .iter()
+            .map(|output| output.name())
+            .collect();
+        validate_embedding_signature(&input_names, &output_names)
+            .map_err(DetectionError::Internal)?;
+
         // Determine embedding dimension from the model's output shape.
         // The output is typically Tensor { shape: [batch, seq_len, dim], .. }.
         let dim = session
@@ -153,7 +158,11 @@ impl OnnxEmbedder {
         Ok(Self {
             session: Mutex::new(session),
             tokenizer: Mutex::new(tokenizer),
-            #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss, reason = "dim validated to be positive and small")]
+            #[expect(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "dim validated to be positive and small"
+            )]
             dim: dim as usize,
             // No prefix — matches the Python precompute script which embeds
             // documents with no prefix. Symmetric mode gives highest similarity.
@@ -197,7 +206,10 @@ impl OnnxEmbedder {
         let seq_len = ids.len();
 
         // Build owned tensors with shape [1, seq_len].
-        #[expect(clippy::cast_possible_wrap, reason = "seq_len is at most MAX_TOKENS (128), fits i64")]
+        #[expect(
+            clippy::cast_possible_wrap,
+            reason = "seq_len is at most MAX_TOKENS (128), fits i64"
+        )]
         let shape = vec![1i64, seq_len as i64];
 
         let input_ids_data: Vec<i64> = ids.iter().map(|&v| i64::from(v)).collect();
@@ -209,7 +221,10 @@ impl OnnxEmbedder {
             .map_err(|e| DetectionError::Internal(format!("attention_mask tensor: {e}")))?;
 
         // Qwen3 needs position_ids. For models that don't have this input, it's ignored.
-        #[expect(clippy::cast_possible_wrap, reason = "seq_len is at most MAX_TOKENS (128), fits i64")]
+        #[expect(
+            clippy::cast_possible_wrap,
+            reason = "seq_len is at most MAX_TOKENS (128), fits i64"
+        )]
         let position_ids_data: Vec<i64> = (0..seq_len as i64).collect();
         let position_ids_tensor = Tensor::from_array((shape, position_ids_data))
             .map_err(|e| DetectionError::Internal(format!("position_ids tensor: {e}")))?;
@@ -264,7 +279,11 @@ impl OnnxEmbedder {
         let out_dims: &[i64] = &out_dims_vec;
         let data = &data_f32[..];
 
-        #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss, reason = "ONNX tensor dimensions are small positive values")]
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "ONNX tensor dimensions are small positive values"
+        )]
         let pooled = if out_dims.len() == 2 {
             // sentence_embedding: shape [1, dim] — already pooled by sentence-transformers
             let dim = out_dims[1] as usize;
@@ -309,14 +328,53 @@ impl OnnxEmbedder {
         }
 
         let elapsed = embed_start.elapsed();
-        log::info!(
-            "[ONNX] embed() took {:?} for {} chars",
-            elapsed,
-            text.len()
-        );
+        log::info!("[ONNX] embed() took {:?} for {} chars", elapsed, text.len());
 
         Ok(result)
     }
+}
+
+#[cfg(feature = "onnx")]
+fn validate_embedding_signature(input_names: &[&str], output_names: &[&str]) -> Result<(), String> {
+    if let Some(name) = input_names
+        .iter()
+        .find(|name| name.starts_with("past_key_values."))
+    {
+        return Err(format!(
+            "ONNX model is a generation export with KV-cache input '{name}', not a feature-extraction embedding export"
+        ));
+    }
+
+    if let Some(name) = output_names
+        .iter()
+        .find(|name| name.starts_with("present."))
+    {
+        return Err(format!(
+            "ONNX model is a generation export with KV-cache output '{name}', not a feature-extraction embedding export"
+        ));
+    }
+
+    if !input_names.iter().any(|name| *name == "input_ids") {
+        return Err("ONNX embedding model missing required input 'input_ids'".to_string());
+    }
+
+    if !input_names.iter().any(|name| *name == "attention_mask") {
+        return Err("ONNX embedding model missing required input 'attention_mask'".to_string());
+    }
+
+    if !output_names.iter().any(|name| {
+        matches!(
+            *name,
+            "sentence_embedding" | "last_hidden_state" | "token_embeddings"
+        )
+    }) {
+        return Err(
+            "ONNX embedding model missing sentence_embedding, last_hidden_state, or token_embeddings output"
+                .to_string(),
+        );
+    }
+
+    Ok(())
 }
 
 #[cfg(feature = "onnx")]
@@ -327,5 +385,34 @@ impl TextEmbedder for OnnxEmbedder {
 
     fn dimension(&self) -> usize {
         self.dim
+    }
+}
+
+#[cfg(all(test, feature = "onnx"))]
+mod tests {
+    use super::validate_embedding_signature;
+
+    #[test]
+    fn rejects_generation_export_with_kv_cache_inputs() {
+        let input_names = [
+            "input_ids",
+            "attention_mask",
+            "position_ids",
+            "past_key_values.0.key",
+            "past_key_values.0.value",
+        ];
+        let output_names = ["last_hidden_state", "present.0.key", "present.0.value"];
+
+        let err = validate_embedding_signature(&input_names, &output_names).unwrap_err();
+
+        assert!(err.contains("past_key_values"));
+    }
+
+    #[test]
+    fn accepts_feature_extraction_export_signature() {
+        let input_names = ["input_ids", "attention_mask", "position_ids"];
+        let output_names = ["last_hidden_state"];
+
+        validate_embedding_signature(&input_names, &output_names).unwrap();
     }
 }

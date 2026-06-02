@@ -484,76 +484,98 @@ pub fn run() {
             let qwen_emb = resolve_resource(app, "embeddings/kjv-qwen3-0.6b.bin");
             let qwen_ids = resolve_resource(app, "embeddings/kjv-qwen3-0.6b-ids.bin");
 
-            let (model_path, tokenizer_path, embeddings_path, ids_path) = {
-
-                // Prefer Qwen3 FP32 — the bundled INT8 file is a generation
-                // export with KV-cache inputs (wrong for embeddings). See
-                // learning #7 + #28. FP32 is the only known-correct local option
-                // until we produce a proper INT8 feature-extraction quantization.
-                if qwen_fp32.exists() && qwen_emb.exists() {
-                    log::info!("Using Qwen3 FP32 embedding model (quality, 1024-dim, 1.1GB)");
-                    (qwen_fp32, qwen_tok, qwen_emb, qwen_ids)
-                } else if qwen_int8.exists() && qwen_emb.exists() {
-                    log::warn!("Falling back to Qwen3 INT8 — verify it's a feature-extraction export, not generation (KV cache inputs = wrong)");
-                    (qwen_int8, qwen_tok, qwen_emb, qwen_ids)
-                } else if minilm_model.exists() && minilm_emb.exists() {
-                    log::info!("Using MiniLM-L6-v2 embedding model (fast, 384-dim)");
-                    (minilm_model, minilm_tok, minilm_emb, minilm_ids)
-                } else if minilm_model.exists() {
-                    log::info!("MiniLM model found but embeddings missing. Run precompute.");
-                    (minilm_model, minilm_tok, minilm_emb, minilm_ids)
-                } else {
-                    // Default to Qwen3 paths (will fail gracefully if missing)
-                    (qwen_fp32, qwen_tok, qwen_emb, qwen_ids)
-                }
-            };
+            // Prefer Qwen3 INT8 when present, but keep FP32/MiniLM fallbacks.
+            // OnnxEmbedder validates the graph signature at load time, so a
+            // stale generation/KV-cache INT8 export is rejected and startup can
+            // still try the next known-good model.
+            let model_candidates = [
+                (
+                    "Qwen3 INT8 embedding model (quality, 1024-dim, lower RAM)",
+                    qwen_int8,
+                    qwen_tok.clone(),
+                    qwen_emb.clone(),
+                    qwen_ids.clone(),
+                ),
+                (
+                    "Qwen3 FP32 embedding model (quality, 1024-dim, 1.1GB)",
+                    qwen_fp32,
+                    qwen_tok,
+                    qwen_emb,
+                    qwen_ids,
+                ),
+                (
+                    "MiniLM-L6-v2 embedding model (fast, 384-dim)",
+                    minilm_model,
+                    minilm_tok,
+                    minilm_emb,
+                    minilm_ids,
+                ),
+            ];
 
             #[cfg(feature = "onnx")]
-            if model_path.exists() && tokenizer_path.exists() {
+            {
                 use rhema_detection::semantic::embedder::TextEmbedder;
                 use rhema_detection::semantic::index::VectorIndex;
-                match rhema_detection::OnnxEmbedder::load(&model_path, &tokenizer_path) {
-                    Ok(embedder) => {
-                        log::info!("ONNX embedding model loaded");
-                        let managed_state = app.state::<Mutex<state::AppState>>();
-                        match managed_state.lock() {
-                            Ok(mut state) => {
-                                // If pre-computed embeddings exist, load the vector index
-                                if embeddings_path.exists() && ids_path.exists() {
-                                    let dim = embedder.dimension();
-                                    match rhema_detection::HnswVectorIndex::load(&embeddings_path, &ids_path, dim) {
-                                        Ok(index) => {
-                                            log::info!("Verse embeddings loaded ({} vectors)", index.len());
+
+                let mut semantic_loaded = false;
+                for (label, model_path, tokenizer_path, embeddings_path, ids_path) in model_candidates {
+                    if !model_path.exists() || !tokenizer_path.exists() {
+                        continue;
+                    }
+                    if !embeddings_path.exists() || !ids_path.exists() {
+                        log::info!(
+                            "{label} found but embeddings missing. Run 'bun run export:verses' then the precompute binary."
+                        );
+                        continue;
+                    }
+
+                    log::info!("Using {label}");
+                    match rhema_detection::OnnxEmbedder::load(&model_path, &tokenizer_path) {
+                        Ok(embedder) => {
+                            let dim = embedder.dimension();
+                            match rhema_detection::HnswVectorIndex::load(&embeddings_path, &ids_path, dim) {
+                                Ok(index) => {
+                                    log::info!("ONNX embedding model loaded");
+                                    log::info!("Verse embeddings loaded ({} vectors)", index.len());
+                                    let managed_state = app.state::<Mutex<state::AppState>>();
+                                    match managed_state.lock() {
+                                        Ok(mut state) => {
                                             state.detection_pipeline.set_semantic(
                                                 rhema_detection::SemanticDetector::new(
                                                     Box::new(embedder),
                                                     Box::new(index),
                                                 ),
                                             );
+                                            semantic_loaded = true;
+                                            break;
                                         }
-                                        Err(e) => {
-                                            log::warn!("Failed to load verse embeddings: {e}");
+                                        Err(_) => {
+                                            log::error!("AppState lock unavailable; semantic search disabled this session");
+                                            break;
                                         }
-                                    }
-                                } else {
-                                    log::info!("No pre-computed verse embeddings found. Run 'bun run export:verses' then the precompute binary.");
+                                    };
+                                }
+                                Err(e) => {
+                                    log::warn!("Failed to load verse embeddings for {label}: {e}");
                                 }
                             }
-                            Err(_) => log::error!("AppState lock unavailable; semantic search disabled this session"),
-                        };
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to load {label}: {e}");
+                        }
                     }
-                    Err(e) => {
-                        log::warn!("Failed to load ONNX model: {e}");
-                    }
+
                 }
-            } else {
-                log::info!("ONNX model not found. Semantic search disabled. Run 'bun run download:model' to download.");
+
+                if !semantic_loaded {
+                    log::info!("ONNX model not found or failed to load. Semantic search disabled. Run 'bun run download:model' to download.");
+                };
             }
 
             #[cfg(not(feature = "onnx"))]
             {
                 // Keep compiler happy about unused path bindings when onnx is disabled.
-                let _ = (&model_path, &tokenizer_path, &embeddings_path, &ids_path);
+                let _ = &model_candidates;
                 log::info!("Built without 'onnx' feature — semantic detection disabled.");
             }
 
@@ -613,5 +635,9 @@ fn read_enabled_hymnals(app: &tauri::App) -> Option<Vec<String>> {
         .iter()
         .filter_map(|v| v.as_str().map(String::from))
         .collect();
-    if ids.is_empty() { None } else { Some(ids) }
+    if ids.is_empty() {
+        None
+    } else {
+        Some(ids)
+    }
 }

@@ -7,10 +7,12 @@
  * This script automatically:
  *   1. Verifies Python >= 3.9.0 is available
  *   2. Creates a .venv if one doesn't exist
- *   3. Installs optimum-onnx[onnxruntime] into the venv
- *   4. Runs optimum-cli to export and quantize the model
+ *   3. Installs ONNX export + quantization tooling into the venv
+ *   4. Runs optimum-cli to export the feature-extraction model
+ *   5. Converts the FP16 graph to FP32 and quantizes it to INT8
  *
  * Run: bun run download:model
+ *      bun run download:model --quantize-only
  */
 
 import { join } from "node:path"
@@ -28,67 +30,76 @@ const MODELS_DIR_INT8 = join(
 )
 
 async function main() {
+  const quantizeOnly = process.argv.includes("--quantize-only")
+
   // --- Phase 1: Python environment setup ---
   await ensurePythonEnv([
     "optimum-onnx[onnxruntime]",
+    "onnx",
+    "onnxruntime",
     "sentence-transformers",
     "accelerate",
   ])
 
   // --- Phase 2: Export model ---
   const optimumCli = getVenvBin("optimum-cli")
+  const python = getVenvBin(process.platform === "win32" ? "python" : "python3")
 
-  console.log(
-    "\n🧠 Exporting Qwen3-Embedding-0.6B to ONNX (feature-extraction)...\n"
-  )
-  console.log(
-    "  This downloads the model from HuggingFace and converts it to ONNX format."
-  )
-  console.log(
-    "  The export uses --task feature-extraction to avoid KV cache inputs."
-  )
-  console.log("  This may take a few minutes on first run.\n")
+  if (!quantizeOnly) {
+    console.log(
+      "\n🧠 Exporting Qwen3-Embedding-0.6B to ONNX (feature-extraction)...\n"
+    )
+    console.log(
+      "  This downloads the model from HuggingFace and converts it to ONNX format."
+    )
+    console.log(
+      "  The export uses --task feature-extraction to avoid KV cache inputs."
+    )
+    console.log("  This may take a few minutes on first run.\n")
 
-  const proc = Bun.spawn(
-    [
-      optimumCli,
-      "export",
-      "onnx",
-      "--model",
-      "Qwen/Qwen3-Embedding-0.6B",
-      "--task",
-      "feature-extraction",
-      MODELS_DIR,
-    ],
-    {
-      stdout: "inherit",
-      stderr: "inherit",
+    const proc = Bun.spawn(
+      [
+        optimumCli,
+        "export",
+        "onnx",
+        "--model",
+        "Qwen/Qwen3-Embedding-0.6B",
+        "--task",
+        "feature-extraction",
+        MODELS_DIR,
+      ],
+      {
+        stdout: "inherit",
+        stderr: "inherit",
+      }
+    )
+
+    const exitCode = await proc.exited
+    if (exitCode !== 0) {
+      console.error("\n❌ Export failed.")
+      process.exit(1)
     }
-  )
 
-  const exitCode = await proc.exited
-  if (exitCode !== 0) {
-    console.error("\n❌ Export failed.")
-    process.exit(1)
+    console.log(`\n✅ Model exported to ${MODELS_DIR}\n`)
+  } else {
+    console.log("\n⏭ Skipping export; quantizing existing ONNX model.\n")
   }
 
-  console.log(`\n✅ Model exported to ${MODELS_DIR}\n`)
-
-  // --- Phase 3: Quantize to INT8 for ARM64 (Apple Silicon) ---
-  console.log("\n⚡ Quantizing model to INT8 (ARM64)...\n")
-  console.log("  This reduces the model from ~2.4GB to ~571MB.")
-  console.log("  Dynamic INT8 quantization preserves >99% embedding quality.\n")
+  // --- Phase 3: Quantize to INT8 ---
+  console.log("\n⚡ Quantizing model to INT8...\n")
+  console.log("  The quantizer first converts FP16 graph entries to FP32.")
+  console.log("  This avoids ONNX Runtime FLOAT16 quantization load errors.\n")
 
   const quantizeProc = Bun.spawn(
     [
-      optimumCli,
-      "onnxruntime",
-      "quantize",
-      "--onnx_model",
-      MODELS_DIR,
-      "--arm64",
-      "-o",
-      MODELS_DIR_INT8,
+      python,
+      join(PROJECT_ROOT, "data", "quantize-qwen3-int8.py"),
+      "--source",
+      join(MODELS_DIR, "model.onnx"),
+      "--output",
+      join(MODELS_DIR_INT8, "model_quantized.onnx"),
+      "--mirror",
+      join(MODELS_DIR, "onnx", "model_quantized.onnx"),
     ],
     {
       stdout: "inherit",
@@ -99,7 +110,7 @@ async function main() {
   const quantizeExitCode = await quantizeProc.exited
   if (quantizeExitCode !== 0) {
     console.error("\n⚠️  Quantization failed. The FP32 model is still usable.")
-    console.error("   To quantize manually: bun run quantize:model")
+    console.error("   To retry quantization: bun run quantize:model")
   } else {
     console.log(`\n✅ INT8 model quantized to ${MODELS_DIR_INT8}\n`)
   }
