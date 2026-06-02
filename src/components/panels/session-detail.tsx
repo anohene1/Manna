@@ -77,8 +77,8 @@ function hasText(value: string | null | undefined) {
   return Boolean(value?.trim())
 }
 
-function quoteSpeaker(sessionSpeaker: string | null | undefined, quoteSpeaker?: string) {
-  return sessionSpeaker?.trim() || quoteSpeaker?.trim() || "Pastor"
+function quoteSpeaker(quoteSpeaker: string | undefined, sessionSpeaker: string | null | undefined) {
+  return quoteSpeaker?.trim() || sessionSpeaker?.trim() || "Pastor"
 }
 
 function hasSermonFlow(summary: SermonSummary) {
@@ -827,9 +827,9 @@ export function SessionDetail({ sessionId, sessionTitle, initialTab, onBack }: S
                                       )}
                                       {point.scripture_refs.length > 0 && (
                                         <div className="mt-2 flex flex-wrap gap-1">
-                                          {point.scripture_refs.map((ref) => (
+                                          {point.scripture_refs.map((ref, refIndex) => (
                                             <span
-                                              key={ref}
+                                              key={`${ref}-${refIndex}`}
                                               className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary"
                                             >
                                               {ref}
@@ -927,11 +927,11 @@ export function SessionDetail({ sessionId, sessionTitle, initialTab, onBack }: S
                               </p>
                               <div className="flex items-center justify-between gap-2">
                                 <span className="text-[10px] text-muted-foreground">
-                                  {quoteSpeaker(session?.speaker, q.speaker)}
+                                  {quoteSpeaker(q.speaker, session?.speaker)}
                                 </span>
                                 <button
                                   onClick={() => {
-                                    const line = `“${q.text}” — ${quoteSpeaker(session?.speaker, q.speaker)}`
+                                    const line = `“${q.text}” — ${quoteSpeaker(q.speaker, session?.speaker)}`
                                     navigator.clipboard.writeText(line)
                                   }}
                                   className="rounded px-1.5 py-0.5 text-[10px] text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100"
