@@ -470,7 +470,7 @@ function SttPreview() {
 
       {missingKey && (
         <p className="text-[10px] text-amber-600 dark:text-amber-400">
-          No {sttProvider} API key configured. Add one in Speech Recognition section above.
+          No {sttProvider} API key configured. Add one in API Keys.
         </p>
       )}
 

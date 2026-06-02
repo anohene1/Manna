@@ -79,6 +79,19 @@ interface BroadcastState {
 
 type Nested = Record<string, unknown> | unknown[]
 
+function sameVerseIdentity(
+  a: { id: number; translation_id: number; book_number: number; chapter: number; verse: number },
+  b: { id: number; translation_id: number; book_number: number; chapter: number; verse: number },
+): boolean {
+  if (a.id !== 0 && b.id !== 0) return a.id === b.id
+  return (
+    a.translation_id === b.translation_id &&
+    a.book_number === b.book_number &&
+    a.chapter === b.chapter &&
+    a.verse === b.verse
+  )
+}
+
 /** Immutably set a dot-path value, cloning each container along the way.
  *  Numeric path segments index into arrays (e.g. `"items.0.label"`). */
 function setNestedValue<T extends Nested>(obj: T, path: string, value: unknown): T {
@@ -242,11 +255,14 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
       const sel = useBibleStore.getState().selectedVerse
       if (sel) {
         const bareRef = `${sel.book_name} ${sel.chapter}:${sel.verse}`
-        if (liveVerse.reference.startsWith(bareRef)) {
+        const isChunkedLiveRef = /\(\d+\/\d+\)/.test(liveVerse.reference)
+        if (!isChunkedLiveRef && liveVerse.reference.startsWith(bareRef)) {
           void import("@/stores/queue-store").then(({ useQueueStore }) => {
             const q = useQueueStore.getState()
             const exists = q.items.some(
-              (it) => it.kind === "verse" && it.verse.id === sel.id,
+              (it) =>
+                it.kind === "verse" &&
+                sameVerseIdentity(it.verse, sel),
             )
             if (exists) return
             q.addItem({

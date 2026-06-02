@@ -90,7 +90,7 @@ Unscheduled work. Grouped by type. Items pulled from EXECUTION.md history and th
 
 - Current state (2026-04-21): bundled `models/qwen3-embedding-0.6b-int8/model_quantized.onnx` is a **generation export** with KV cache inputs — wrong for embeddings. FP32 forced as default in loader. INT8 demoted to warn-logged fallback.
 - Fix: run `optimum-cli onnxruntime quantize --arm64` against the FP32 **feature-extraction** ONNX (3 inputs, 1 output), not the default generation export. Replace bundled INT8 file.
-- Payoff: 4× RAM savings on low-spec church PCs without quality loss (per learning #28), identical to upstream rhema's default deployment — but with a *correct* export this time.
+- Payoff: 4× RAM savings on low-spec church PCs without quality loss (per learning #28), identical to upstream rhema's default deployment — but with a _correct_ export this time.
 - **Est:** ~1 hr (quantize + verify inputs + commit)
 - **Priority:** medium — affects all church PCs, plus benefits upstream rhema users who inherit the same broken file
 
@@ -98,13 +98,13 @@ Unscheduled work. Grouped by type. Items pulled from EXECUTION.md history and th
 
 Researched vs current Qwen3-Embedding-0.6B. **Gemma is a downgrade on retrieval — our core metric.**
 
-| Metric | Qwen3-0.6B | EmbeddingGemma-300M |
-|---|---|---|
-| MTEB Multilingual avg | 64.33 | 61.15 |
-| **MTEB Retrieval sub-score** | **64.64** | **~54** |
-| Context | 32K | 2K |
-| License | Apache-2.0 | Gemma (restricted) |
-| Size Q4 | 880MB | 190MB |
+| Metric                       | Qwen3-0.6B | EmbeddingGemma-300M |
+| ---------------------------- | ---------- | ------------------- |
+| MTEB Multilingual avg        | 64.33      | 61.15               |
+| **MTEB Retrieval sub-score** | **64.64**  | **~54**             |
+| Context                      | 32K        | 2K                  |
+| License                      | Apache-2.0 | Gemma (restricted)  |
+| Size Q4                      | 880MB      | 190MB               |
 
 Gemma wins on size (5×) and cleaner ONNX (no KV cache), but that's irrelevant on desktop. Only compelling for a future mobile companion app. Source: [research 2026-04-19], [EmbeddingGemma tech report](https://arxiv.org/abs/2509.20354), [Qwen3 MTEB tables](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B).
 

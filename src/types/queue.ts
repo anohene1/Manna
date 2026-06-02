@@ -14,6 +14,18 @@ export type QueueItem =
       verse: Verse
       reference: string
       confidence: number
+      /**
+       * Present when this row is one slice of a long verse split at enqueue
+       * time. Sibling chunks share the same `groupId`. `text` overrides
+       * `verse.text` for rendering and preview; `reference` already carries
+       * the `(N/M)` suffix.
+       */
+      chunk?: {
+        groupId: string
+        index: number
+        total: number
+        text: string
+      }
     })
   | (QueueItemBase & {
       kind: "song-stanza"

@@ -41,13 +41,14 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { useBible, bibleActions } from "@/hooks/use-bible"
-import { toVerseRenderData } from "@/hooks/use-broadcast"
+import { queueVerseToRenderData, toVerseRenderData } from "@/hooks/use-broadcast"
 import { switchTranslation } from "@/lib/switch-translation"
 import { useBibleStore, useBroadcastStore, useQueueStore } from "@/stores"
 import type { Book, Verse } from "@/types"
 import { Input } from "@/components/ui/input"
 import { searchContextWithFuse } from "@/lib/context-search"
 import { chaptersIn } from "@/lib/bible-chapters"
+import { addOrFindQueuedVerse, presentQueuedVerseLive } from "@/lib/queue-verse"
 
 type SearchTab = "book" | "context"
 
@@ -707,10 +708,7 @@ export function SearchPanel() {
                           className="gap-1 rounded-full px-2.5 text-[10px]"
                           onClick={(e) => {
                             e.stopPropagation()
-                            const trans = useBibleStore.getState().translations
-                              .find(t => t.id === useBibleStore.getState().activeTranslationId)?.abbreviation ?? "KJV"
-                            useBroadcastStore.getState().setPreviewVerse(toVerseRenderData(verse, trans))
-                            useBroadcastStore.getState().goLive()
+                            presentQueuedVerseLive(verse)
                           }}
                         >
                           <PlayIcon className="size-2.5" />
@@ -724,19 +722,18 @@ export function SearchPanel() {
                         onClick={(e) => {
                           e.stopPropagation()
                           const wasEmpty = useQueueStore.getState().items.length === 0
-                          useQueueStore.getState().addItem({
-                            kind: "verse",
-                            id: crypto.randomUUID(),
-                            verse,
-                            reference: `${verse.book_name} ${verse.chapter}:${verse.verse}`,
-                            confidence: 1,
-                            source: "manual",
-                            added_at: Date.now(),
-                          })
+                          const { item, index } = addOrFindQueuedVerse(verse)
+                          useQueueStore.getState().setActive(index)
                           if (wasEmpty) {
-                            const trans = useBibleStore.getState().translations
-                              .find(t => t.id === useBibleStore.getState().activeTranslationId)?.abbreviation ?? "KJV"
-                            useBroadcastStore.getState().setPreviewVerse(toVerseRenderData(verse, trans))
+                            useBroadcastStore.getState().setPreviewVerse(
+                              item.kind === "verse"
+                                ? queueVerseToRenderData(
+                                    item,
+                                    useBibleStore.getState().translations
+                                      .find(t => t.id === useBibleStore.getState().activeTranslationId)?.abbreviation ?? "KJV",
+                                  )
+                                : null,
+                            )
                           }
                         }}
                       >
@@ -849,10 +846,7 @@ export function SearchPanel() {
                           className="gap-1 rounded-full px-2.5 text-[10px]"
                           onClick={(e) => {
                             e.stopPropagation()
-                            const trans = useBibleStore.getState().translations
-                              .find(t => t.id === useBibleStore.getState().activeTranslationId)?.abbreviation ?? "KJV"
-                            useBroadcastStore.getState().setPreviewVerse(toVerseRenderData(resultVerse, trans))
-                            useBroadcastStore.getState().goLive()
+                            presentQueuedVerseLive(resultVerse, result.similarity)
                           }}
                         >
                           <PlayIcon className="size-2.5" />
@@ -866,19 +860,18 @@ export function SearchPanel() {
                         onClick={(e) => {
                           e.stopPropagation()
                           const wasEmpty = useQueueStore.getState().items.length === 0
-                          useQueueStore.getState().addItem({
-                            kind: "verse",
-                            id: crypto.randomUUID(),
-                            verse: resultVerse,
-                            reference: `${result.book_name} ${result.chapter}:${result.verse}`,
-                            confidence: result.similarity,
-                            source: "manual",
-                            added_at: Date.now(),
-                          })
+                          const { item, index } = addOrFindQueuedVerse(resultVerse, result.similarity)
+                          useQueueStore.getState().setActive(index)
                           if (wasEmpty) {
-                            const trans = useBibleStore.getState().translations
-                              .find(t => t.id === useBibleStore.getState().activeTranslationId)?.abbreviation ?? "KJV"
-                            useBroadcastStore.getState().setPreviewVerse(toVerseRenderData(resultVerse, trans))
+                            useBroadcastStore.getState().setPreviewVerse(
+                              item.kind === "verse"
+                                ? queueVerseToRenderData(
+                                    item,
+                                    useBibleStore.getState().translations
+                                      .find(t => t.id === useBibleStore.getState().activeTranslationId)?.abbreviation ?? "KJV",
+                                  )
+                                : null,
+                            )
                           }
                         }}
                       >

@@ -44,8 +44,9 @@ export function StoragePanel() {
     return (
       <div className="flex flex-col gap-2">
         <p className="text-xs text-muted-foreground">
-          Audio recordings of past sessions appear here. Delete them to free up
-          disk space.
+          Audio recordings of past sessions appear here. Deleting a recording
+          frees disk space but keeps the session, transcript, detections, and
+          summary.
         </p>
         <p className="text-sm text-muted-foreground">No recordings yet.</p>
       </div>
@@ -56,7 +57,8 @@ export function StoragePanel() {
     <div className="flex flex-col gap-3">
       <p className="text-xs text-muted-foreground">
         Audio recordings of past sessions. Delete any you no longer need to
-        reclaim disk space.
+        reclaim disk space; the session record, transcript, detections, and
+        summary stay available.
       </p>
       <ul className="flex flex-col gap-2">
         {sessions.map((s) => (

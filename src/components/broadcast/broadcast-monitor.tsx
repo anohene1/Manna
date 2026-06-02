@@ -1,13 +1,28 @@
 import { useState, useEffect } from "react"
 import { ChevronLeftIcon, ChevronRightIcon, ChevronDownIcon, CheckIcon, PauseIcon, PlayIcon, XIcon } from "lucide-react"
 import { useBroadcastStore, useBibleStore, useSessionStore, useQueueStore, useSongStore } from "@/stores"
-import { toVerseRenderData } from "@/hooks/use-broadcast"
+import { queueVerseToRenderData, toVerseRenderData } from "@/hooks/use-broadcast"
 import { switchTranslation } from "@/lib/switch-translation"
 import { bibleActions } from "@/hooks/use-bible"
 import { songStanzaToRenderData } from "@/lib/song-to-render"
 import { invoke } from "@tauri-apps/api/core"
 import type { Verse } from "@/types"
 import { CanvasVerse } from "@/components/ui/canvas-verse"
+
+function renderQueueItemAt(index: number) {
+  const item = useQueueStore.getState().items[index]
+  if (!item) return null
+  if (item.kind === "song-stanza") {
+    const song = useSongStore.getState().getSong(item.songId)
+    return songStanzaToRenderData(item, song)
+  }
+  if (item.kind === "verse") {
+    const trans = useBibleStore.getState().translations
+      .find(t => t.id === useBibleStore.getState().activeTranslationId)?.abbreviation ?? "KJV"
+    return queueVerseToRenderData(item, trans)
+  }
+  return null
+}
 
 export function BroadcastMonitor() {
   const previewVerse = useBroadcastStore((s) => s.previewVerse)
@@ -57,27 +72,21 @@ export function BroadcastMonitor() {
     const current = isLive ? liveVerse : previewVerse
     if (!current) return
 
-    // Song-stanza path — advance queue activeIndex across song-stanza items
+    // Queue path — advance through song stanzas and split verse chunks.
     const queue = useQueueStore.getState()
     const activeIdx = queue.activeIndex
-    if (activeIdx !== null && queue.items[activeIdx]?.kind === "song-stanza") {
+    if (activeIdx !== null) {
       const nextIdx = activeIdx + delta
       if (nextIdx < 0 || nextIdx >= queue.items.length) return
-      const nextItem = queue.items[nextIdx]
       queue.setActive(nextIdx)
-      if (nextItem.kind === "song-stanza") {
-        const song = useSongStore.getState().getSong(nextItem.songId)
-        const render = songStanzaToRenderData(nextItem, song)
-        if (render) {
-          if (isLive) useBroadcastStore.getState().setLiveVerse(render)
-          else useBroadcastStore.getState().setPreviewVerse(render)
+      const render = renderQueueItemAt(nextIdx)
+      if (render) {
+        if (isLive) {
+          useBroadcastStore.getState().setLiveVerse(render)
+          useBroadcastStore.getState().setPreviewVerse(renderQueueItemAt(nextIdx + delta))
+        } else {
+          useBroadcastStore.getState().setPreviewVerse(render)
         }
-      } else if (nextItem.kind === "verse") {
-        const trans = useBibleStore.getState().translations
-          .find(t => t.id === useBibleStore.getState().activeTranslationId)?.abbreviation ?? "KJV"
-        const render = toVerseRenderData(nextItem.verse, trans)
-        if (isLive) useBroadcastStore.getState().setLiveVerse(render)
-        else useBroadcastStore.getState().setPreviewVerse(render)
       }
       return
     }
@@ -170,9 +179,9 @@ export function BroadcastMonitor() {
               <button
                 onClick={clearScreen}
                 className="rounded border border-destructive/25 bg-destructive/12 px-2 py-0.5 text-[9px] font-semibold uppercase text-destructive transition-colors hover:bg-destructive/20"
-                title="Stop broadcasting and close projector window"
+                title="Clear the live output and close the projector window"
               >
-                Kill Projector
+                Clear Output
               </button>
             ) : (
               <button

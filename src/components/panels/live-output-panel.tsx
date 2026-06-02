@@ -2,7 +2,7 @@ import { PanelHeader } from "@/components/ui/panel-header"
 import { CanvasVerse } from "@/components/ui/canvas-verse"
 import { cn } from "@/lib/utils"
 import { useBroadcastStore, useBibleStore } from "@/stores"
-import { toVerseRenderData } from "@/hooks/use-broadcast"
+import { presentQueuedVerseLive } from "@/lib/queue-verse"
 
 export function LiveOutputPanel() {
   const isLive = useBroadcastStore((s) => s.isLive)
@@ -30,10 +30,8 @@ export function LiveOutputPanel() {
       return
     }
     const bible = useBibleStore.getState()
-    const translation =
-      bible.translations.find((t) => t.id === bible.activeTranslationId)?.abbreviation ?? "KJV"
     if (bible.selectedVerse) {
-      broadcast.setLiveVerse(toVerseRenderData(bible.selectedVerse, translation))
+      presentQueuedVerseLive(bible.selectedVerse)
     } else {
       broadcast.setLive(true)
       broadcast.syncBroadcastOutput()

@@ -41,7 +41,7 @@ import {
   XIcon,
   PaletteIcon,
 } from "lucide-react"
-import { useSettingsStore, persistDeepgramApiKey, persistAssemblyAiApiKey, persistClaudeApiKey, persistDeepseekApiKey, persistGeniusToken, persistEnabledHymnals, persistAutoMode, persistConfidenceThreshold, persistSttProvider, persistPexelsApiKey, persistUnsplashApiKey, persistBraveApiKey } from "@/stores"
+import { useSettingsStore, persistDeepgramApiKey, persistAssemblyAiApiKey, persistClaudeApiKey, persistDeepseekApiKey, persistGeniusToken, persistEnabledHymnals, persistAutoMode, persistConfidenceThreshold, persistSttProvider, persistPexelsApiKey, persistUnsplashApiKey, persistBraveApiKey, persistAutoSplitLongVerses, persistSplitWordThreshold } from "@/stores"
 import { checkForUpdates } from "@/hooks/use-updater"
 import { HYMNAL_NAMES, HYMNAL_SOURCES } from "@/types"
 import { AudioTestPanel } from "@/components/audio-test-panel"
@@ -59,63 +59,78 @@ import { BrandingSection } from "@/components/settings/branding"
 
 type NavSection = "audio" | "speech" | "bible" | "display" | "branding" | "hymnals" | "api-keys" | "remote" | "storage" | "projector" | "help"
 
-const navItems: { name: string; id: NavSection; icon: React.ReactNode }[] = [
+type NavGroup = "Setup" | "Output" | "Integrations" | "Maintenance" | "Help"
+
+const navItems: { name: string; id: NavSection; group: NavGroup; icon: React.ReactNode }[] = [
   {
     name: "Audio",
     id: "audio",
+    group: "Setup",
     icon: <MicIcon strokeWidth={2} />,
   },
   {
     name: "Speech Recognition",
     id: "speech",
+    group: "Setup",
     icon: <BrainCircuitIcon strokeWidth={2} />,
   },
   {
     name: "Bible",
     id: "bible",
+    group: "Setup",
     icon: <BookOpenIcon strokeWidth={2} />,
+  },
+  {
+    name: "Hymnals",
+    id: "hymnals",
+    group: "Setup",
+    icon: <MusicIcon strokeWidth={2} />,
+  },
+  {
+    name: "API Keys",
+    id: "api-keys",
+    group: "Setup",
+    icon: <KeyIcon strokeWidth={2} />,
   },
   {
     name: "Display Mode",
     id: "display",
+    group: "Output",
     icon: <TvIcon strokeWidth={2} />,
   },
   {
     name: "Branding",
     id: "branding",
+    group: "Output",
     icon: <PaletteIcon strokeWidth={2} />,
   },
   {
     name: "Projector",
     id: "projector",
+    group: "Output",
     icon: <MonitorIcon strokeWidth={2} />,
-  },
-  {
-    name: "Hymnals",
-    id: "hymnals",
-    icon: <MusicIcon strokeWidth={2} />,
   },
   {
     name: "Remote Control",
     id: "remote",
+    group: "Integrations",
     icon: <RadioIcon strokeWidth={2} />,
-  },
-  {
-    name: "API Keys",
-    id: "api-keys",
-    icon: <KeyIcon strokeWidth={2} />,
   },
   {
     name: "Storage",
     id: "storage",
+    group: "Maintenance",
     icon: <HardDriveIcon strokeWidth={2} />,
   },
   {
     name: "Help",
     id: "help",
+    group: "Help",
     icon: <HelpCircleIcon strokeWidth={2} />,
   },
 ]
+
+const navGroups: NavGroup[] = ["Setup", "Output", "Integrations", "Maintenance", "Help"]
 
 /* -------------------------------------------------------------------------- */
 /*  Section: Audio                                                            */
@@ -240,38 +255,14 @@ function SpeechSection() {
     deepgramApiKey,
     assemblyAiApiKey,
   } = useSettingsStore()
+  const setActiveSection = useSettingsDialogStore((s) => s.setActiveSection)
 
-  const [deepgramKeyValue, setDeepgramKeyValue] = useState(deepgramApiKey ?? "")
-  const [savedProvider, setSavedProvider] = useState<null | "deepgram">(null)
-  const [deepgramVerify, setDeepgramVerify] = useState<VerifyState>({ status: "idle" })
-
-  const handleSaveDeepgramKey = () => {
-    persistDeepgramApiKey(deepgramKeyValue || null)
-    setSavedProvider("deepgram")
-    setTimeout(() => setSavedProvider(null), 2000)
-  }
-
-  const handleTestDeepgramKey = async () => {
-    if (!deepgramKeyValue.trim()) {
-      setDeepgramVerify({ status: "fail", detail: "Enter a key first." })
-      return
-    }
-    setDeepgramVerify({ status: "testing" })
-    try {
-      const result = await invoke<VerifyResult>("verify_deepgram_key", {
-        apiKey: deepgramKeyValue,
-      })
-      if (result.ok) {
-        setDeepgramVerify({ status: "ok", detail: result.detail })
-        // Auto-save verified key
-        if (deepgramKeyValue !== deepgramApiKey) persistDeepgramApiKey(deepgramKeyValue)
-      } else {
-        setDeepgramVerify({ status: "fail", detail: result.detail })
-      }
-    } catch (e) {
-      setDeepgramVerify({ status: "fail", detail: String(e) })
-    }
-  }
+  const selectedKeyStatus =
+    sttProvider === "deepgram"
+      ? { label: "Deepgram API Key", configured: Boolean(deepgramApiKey) }
+      : sttProvider === "assemblyai"
+        ? { label: "AssemblyAI API Key", configured: Boolean(assemblyAiApiKey) }
+        : null
 
   return (
     <div className="flex flex-col gap-6">
@@ -344,83 +335,18 @@ function SpeechSection() {
         </RadioGroup>
       </div>
 
-      {/* Deepgram settings — show when deepgram is selected */}
-      {sttProvider === "deepgram" && (
-        <div className="flex flex-col gap-2">
+      {selectedKeyStatus ? (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/20 p-3">
           <div className="flex items-center gap-2">
-            <label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Deepgram API Key
-            </label>
-            {deepgramApiKey && (
-              <Badge variant="outline" className="text-[0.5rem]">
-                Key configured
-              </Badge>
-            )}
-          </div>
-          <div className="flex gap-2">
-            <Input
-              type="password"
-              placeholder="Enter your Deepgram API key..."
-              value={deepgramKeyValue}
-              onChange={(e) => {
-                setDeepgramKeyValue(e.target.value)
-                setDeepgramVerify({ status: "idle" })
-              }}
-              className="flex-1 text-xs"
-            />
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleTestDeepgramKey}
-              disabled={deepgramVerify.status === "testing"}
-            >
-              {deepgramVerify.status === "testing" ? (
-                <>
-                  <Loader2Icon className="size-3 animate-spin" />
-                  Testing…
-                </>
-              ) : (
-                "Test"
-              )}
-            </Button>
-            <Button size="sm" onClick={handleSaveDeepgramKey}>
-              {savedProvider === "deepgram" ? (
-                <>
-                  <CheckIcon className="size-3" />
-                  Saved
-                </>
-              ) : (
-                "Save"
-              )}
-            </Button>
-          </div>
-          {deepgramVerify.status === "ok" && (
-            <p className="flex items-center gap-1.5 text-[0.625rem] text-emerald-600 dark:text-emerald-400">
-              <CheckIcon className="size-3" /> {deepgramVerify.detail}
-            </p>
-          )}
-          {deepgramVerify.status === "fail" && (
-            <p className="flex items-center gap-1.5 text-[0.625rem] text-destructive">
-              <XIcon className="size-3" /> {deepgramVerify.detail}
-            </p>
-          )}
-          {deepgramVerify.status === "idle" && (
-            <p className="text-[0.625rem] text-muted-foreground">
-              Required for live transcription. Get a key at{" "}
-              <span className="text-primary">deepgram.com</span>
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* AssemblyAI key status — configure in API Keys section */}
-      {sttProvider === "assemblyai" && (
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2">
-            <label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              AssemblyAI API Key
-            </label>
-            {assemblyAiApiKey ? (
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-foreground">
+                {selectedKeyStatus.label}
+              </span>
+              <p className="text-[0.625rem] text-muted-foreground">
+                Cloud transcription keys are managed in API Keys.
+              </p>
+            </div>
+            {selectedKeyStatus.configured ? (
               <Badge variant="outline" className="text-[0.5rem]">
                 Key configured
               </Badge>
@@ -430,8 +356,15 @@ function SpeechSection() {
               </Badge>
             )}
           </div>
-          <p className="text-[0.625rem] text-muted-foreground">
-            Required for live transcription. Configure in the API Keys section.
+          <Button size="sm" variant="outline" onClick={() => setActiveSection("api-keys")}>
+            Manage key
+          </Button>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-border bg-muted/20 p-3">
+          <p className="text-xs font-medium text-foreground">No cloud key required</p>
+          <p className="mt-1 text-[0.625rem] text-muted-foreground">
+            Whisper runs locally. Use API Keys only for summaries, image search, or song lookup.
           </p>
         </div>
       )}
@@ -449,6 +382,8 @@ function DisplayModeSection() {
     setAutoMode,
     confidenceThreshold,
     setConfidenceThreshold,
+    autoSplitLongVerses,
+    splitWordThreshold,
   } = useSettingsStore()
 
   const thresholdPercent = Math.round(confidenceThreshold * 100)
@@ -526,6 +461,45 @@ function DisplayModeSection() {
           </p>
         </div>
       )}
+
+      {/* Long-verse auto-split */}
+      <div className="flex flex-col gap-3 rounded-lg border border-border p-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-0.5">
+            <label className="text-xs font-medium text-foreground">
+              Auto-split long verses
+            </label>
+            <p className="text-[0.625rem] text-muted-foreground">
+              Long verses split into ~25-word chunks at sentence boundaries.
+              Each chunk becomes its own queue row.
+            </p>
+          </div>
+          <input
+            type="checkbox"
+            checked={autoSplitLongVerses}
+            onChange={(e) => persistAutoSplitLongVerses(e.target.checked)}
+            className="size-4 shrink-0 cursor-pointer"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-[0.625rem] text-muted-foreground">
+            Split if longer than
+          </label>
+          <Input
+            type="number"
+            min={20}
+            max={200}
+            value={splitWordThreshold}
+            disabled={!autoSplitLongVerses}
+            onChange={(e) => {
+              const n = Number(e.target.value)
+              if (Number.isFinite(n)) persistSplitWordThreshold(n)
+            }}
+            className="h-7 w-16 text-xs"
+          />
+          <span className="text-[0.625rem] text-muted-foreground">words</span>
+        </div>
+      </div>
     </div>
   )
 }
@@ -537,6 +511,9 @@ function DisplayModeSection() {
 function ApiKeysSection() {
   const { deepgramApiKey, assemblyAiApiKey, deepseekApiKey, geniusToken, pexelsApiKey, unsplashApiKey, braveApiKey, sttProvider } = useSettingsStore()
 
+  const [deepgramKeyValue, setDeepgramKeyValue] = useState(deepgramApiKey ?? "")
+  const [deepgramSaved, setDeepgramSaved] = useState(false)
+  const [deepgramVerify, setDeepgramVerify] = useState<VerifyState>({ status: "idle" })
   const [deepseekKeyValue, setDeepseekKeyValue] = useState(deepseekApiKey ?? "")
   const [deepseekSaved, setDeepseekSaved] = useState(false)
   const [deepseekVerify, setDeepseekVerify] = useState<VerifyState>({ status: "idle" })
@@ -551,6 +528,33 @@ function ApiKeysSection() {
   const [unsplashSaved, setUnsplashSaved] = useState(false)
   const [braveValue, setBraveValue] = useState(braveApiKey ?? "")
   const [braveSaved, setBraveSaved] = useState(false)
+
+  const handleSaveDeepgramKey = () => {
+    persistDeepgramApiKey(deepgramKeyValue || null)
+    setDeepgramSaved(true)
+    setTimeout(() => setDeepgramSaved(false), 2000)
+  }
+
+  const handleTestDeepgramKey = async () => {
+    if (!deepgramKeyValue.trim()) {
+      setDeepgramVerify({ status: "fail", detail: "Enter a key first." })
+      return
+    }
+    setDeepgramVerify({ status: "testing" })
+    try {
+      const result = await invoke<VerifyResult>("verify_deepgram_key", {
+        apiKey: deepgramKeyValue,
+      })
+      if (result.ok) {
+        setDeepgramVerify({ status: "ok", detail: result.detail })
+        if (deepgramKeyValue !== deepgramApiKey) persistDeepgramApiKey(deepgramKeyValue)
+      } else {
+        setDeepgramVerify({ status: "fail", detail: result.detail })
+      }
+    } catch (e) {
+      setDeepgramVerify({ status: "fail", detail: String(e) })
+    }
+  }
 
   const handleSaveAssemblyKey = () => {
     persistAssemblyAiApiKey(assemblyKeyValue || null)
@@ -630,7 +634,7 @@ function ApiKeysSection() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Deepgram key status (configured in Speech Recognition section) */}
+      {/* Deepgram API Key */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-2">
           <label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -646,11 +650,58 @@ function ApiKeysSection() {
             </Badge>
           )}
         </div>
+        <div className="flex gap-2">
+          <Input
+            type="password"
+            placeholder="Enter your Deepgram API key..."
+            value={deepgramKeyValue}
+            onChange={(e) => {
+              setDeepgramKeyValue(e.target.value)
+              setDeepgramVerify({ status: "idle" })
+            }}
+            className="flex-1 text-xs"
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleTestDeepgramKey}
+            disabled={deepgramVerify.status === "testing"}
+          >
+            {deepgramVerify.status === "testing" ? (
+              <>
+                <Loader2Icon className="size-3 animate-spin" />
+                Testing…
+              </>
+            ) : (
+              "Test"
+            )}
+          </Button>
+          <Button size="sm" onClick={handleSaveDeepgramKey}>
+            {deepgramSaved ? (
+              <>
+                <CheckIcon className="size-3" />
+                Saved
+              </>
+            ) : (
+              "Save"
+            )}
+          </Button>
+        </div>
+        {deepgramVerify.status === "ok" && (
+          <p className="flex items-center gap-1.5 text-[0.625rem] text-emerald-600 dark:text-emerald-400">
+            <CheckIcon className="size-3" /> {deepgramVerify.detail}
+          </p>
+        )}
+        {deepgramVerify.status === "fail" && (
+          <p className="flex items-center gap-1.5 text-[0.625rem] text-destructive">
+            <XIcon className="size-3" /> {deepgramVerify.detail}
+          </p>
+        )}
         <p className="text-[0.625rem] text-muted-foreground">
           {sttProvider === "whisper"
             ? "Not required when using local Whisper. "
             : "Required for cloud transcription. "}
-          Configure in the Speech Recognition section.
+          Get a key at <span className="text-primary">deepgram.com</span>.
         </p>
       </div>
 
@@ -1227,7 +1278,7 @@ function RemoteControlSection() {
       <div className="rounded-lg border border-border bg-muted/30 p-3">
         <p className="text-[0.625rem] font-medium text-muted-foreground mb-1">Firewall Note</p>
         <p className="text-[0.625rem] text-muted-foreground leading-relaxed">
-          Your OS may block incoming connections. On macOS, allow Rhema through
+          Your OS may block incoming connections. On macOS, allow Manna through
           System Settings → Network → Firewall. On Windows, allow through
           Windows Security → Firewall → Allow an app.
         </p>
@@ -1287,7 +1338,7 @@ function HelpSection() {
     <div className="space-y-6">
       <div className="space-y-1">
         <p className="text-sm text-muted-foreground">
-          Resources to help you get the most out of Rhema.
+          Resources to help you get the most out of Manna.
         </p>
       </div>
 
@@ -1535,17 +1586,27 @@ export function SettingsDialog() {
             <SidebarGroup>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {navItems.map((item) => (
-                    <SidebarMenuItem key={item.id}>
-                      <SidebarMenuButton
-                        isActive={item.id === activeSection}
-                        onClick={() => setActiveSection(item.id)}
-                      >
-                        {item.icon}
-                        <span>{item.name}</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
+                  {navGroups.map((group) => {
+                    const items = navItems.filter((item) => item.group === group)
+                    return (
+                      <div key={group} className="space-y-1">
+                        <div className="px-2 pt-3 text-[0.625rem] font-semibold uppercase tracking-wider text-muted-foreground/70 first:pt-1">
+                          {group}
+                        </div>
+                        {items.map((item) => (
+                          <SidebarMenuItem key={item.id}>
+                            <SidebarMenuButton
+                              isActive={item.id === activeSection}
+                              onClick={() => setActiveSection(item.id)}
+                            >
+                              {item.icon}
+                              <span>{item.name}</span>
+                            </SidebarMenuButton>
+                          </SidebarMenuItem>
+                        ))}
+                      </div>
+                    )
+                  })}
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
@@ -1553,8 +1614,36 @@ export function SettingsDialog() {
         </Sidebar>
         <main className="flex h-full flex-1 flex-col overflow-hidden">
           <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border px-6">
-            <div className="text-sm font-medium">
-              {sectionTitles[activeSection]}
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              <div className="hidden text-sm font-medium md:block">
+                {sectionTitles[activeSection]}
+              </div>
+              <div className="min-w-0 flex-1 md:hidden">
+                <Select
+                  value={activeSection}
+                  onValueChange={(value) => setActiveSection(value as NavSection)}
+                >
+                  <SelectTrigger className="h-8 w-full text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {navGroups.map((group) => (
+                      <div key={group}>
+                        <div className="px-2 py-1 text-[0.5625rem] font-medium uppercase tracking-wider text-muted-foreground">
+                          {group}
+                        </div>
+                        {navItems
+                          .filter((item) => item.group === group)
+                          .map((item) => (
+                            <SelectItem key={item.id} value={item.id}>
+                              {item.name}
+                            </SelectItem>
+                          ))}
+                      </div>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <Button
               variant="ghost"

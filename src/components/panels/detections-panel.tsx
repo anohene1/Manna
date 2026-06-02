@@ -5,8 +5,10 @@ import { Button } from "@/components/ui/button"
 import { PlayIcon, PlusIcon, RadioIcon, ScanSearchIcon, MicIcon } from "lucide-react"
 import { useDetection, detectionActions } from "@/hooks/use-detection"
 import { bibleActions } from "@/hooks/use-bible"
-import { useQueueStore, useBroadcastStore, useBibleStore, useTranscriptStore } from "@/stores"
+import { useQueueStore, useBroadcastStore, useBibleStore, useTranscriptStore, useSessionStore } from "@/stores"
 import { toVerseRenderData } from "@/hooks/use-broadcast"
+import { presentQueuedVerseLive } from "@/lib/queue-verse"
+import { getWorkspaceMode, getWorkspaceModeCopy } from "@/lib/workspace-mode"
 import { invoke } from "@tauri-apps/api/core"
 import type { DetectionResult } from "@/types"
 
@@ -85,9 +87,7 @@ function DetectionCard({ detection }: { detection: DetectionResult }) {
   const goLiveDetection = () => {
     if (isThisLive) return
     const verse = navigateAndSelect()
-    const translation = useBibleStore.getState().translations
-      .find(t => t.id === useBibleStore.getState().activeTranslationId)?.abbreviation ?? "KJV"
-    useBroadcastStore.getState().setLiveVerse(toVerseRenderData(verse, translation))
+    presentQueuedVerseLive(verse, detection.confidence)
   }
 
   return (
@@ -186,6 +186,12 @@ function DetectionCard({ detection }: { detection: DetectionResult }) {
 export function DetectionsPanel() {
   const { detections } = useDetection()
   const isTranscribing = useTranscriptStore((s) => s.isTranscribing)
+  const activeSession = useSessionStore((s) => s.activeSession)
+  const pendingServiceStart = useSessionStore((s) => s.pendingServiceStart)
+  const sessionsMode = useSessionStore((s) => s.sessionsMode)
+  const modeCopy = getWorkspaceModeCopy(
+    getWorkspaceMode({ activeSession, isTranscribing, pendingServiceStart, sessionsMode })
+  )
 
   return (
     <div
@@ -216,9 +222,9 @@ export function DetectionsPanel() {
                 <MicIcon className="size-7 text-primary" />
               </div>
               <div className="relative flex flex-col gap-2">
-                <p className="text-base font-bold text-foreground">Ready to begin</p>
+                <p className="text-base font-bold text-foreground">{modeCopy.detectionsEmptyTitle}</p>
                 <p className="max-w-[220px] text-xs leading-relaxed text-muted-foreground">
-                  Start a service to detect Bible verses in real time as the sermon is preached.
+                  {modeCopy.detectionsEmptyBody}
                 </p>
               </div>
               <button
@@ -228,7 +234,7 @@ export function DetectionsPanel() {
                 }}
                 className="relative rounded-full bg-gradient-to-r from-primary to-primary/80 px-6 py-3 text-sm font-bold text-primary-foreground shadow-xl shadow-primary/25 transition-all hover:shadow-2xl hover:shadow-primary/35 hover:brightness-110"
               >
-                Start Service
+                {modeCopy.primaryAction}
               </button>
             </div>
           )}
@@ -238,9 +244,9 @@ export function DetectionsPanel() {
                 <ScanSearchIcon className="size-5 animate-pulse text-primary" />
               </div>
               <div className="flex flex-col gap-1">
-                <p className="text-xs font-medium text-foreground">Listening...</p>
+                <p className="text-xs font-medium text-foreground">{modeCopy.detectionsEmptyTitle}</p>
                 <p className="text-[0.625rem] leading-relaxed text-muted-foreground">
-                  Verse references will appear here as they are detected in the sermon.
+                  {modeCopy.detectionsEmptyBody}
                 </p>
               </div>
             </div>

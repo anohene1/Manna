@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { PlayIcon, PlusIcon, BookOpenIcon } from "lucide-react"
 import { useBibleStore, useBroadcastStore, useQueueStore } from "@/stores"
 import { bibleActions } from "@/hooks/use-bible"
-import { toVerseRenderData } from "@/hooks/use-broadcast"
+import { presentQueuedVerseLive } from "@/lib/queue-verse"
 import type { CrossReference, Verse } from "@/types"
 
 interface ResolvedCrossRef {
@@ -45,9 +45,7 @@ function CrossRefCard({ crossRef }: { crossRef: ResolvedCrossRef }) {
       text: crossRef.verseText,
     }
     bibleActions.selectVerse(verse)
-    const trans = useBibleStore.getState().translations
-      .find(t => t.id === useBibleStore.getState().activeTranslationId)?.abbreviation ?? "KJV"
-    useBroadcastStore.getState().setLiveVerse(toVerseRenderData(verse, trans))
+    presentQueuedVerseLive(verse)
   }
 
   const handleAddToQueue = () => {

@@ -12,7 +12,7 @@ import {
 } from "@/stores"
 import { useTauriEvent } from "@/hooks/use-tauri-event"
 import { bibleActions } from "@/hooks/use-bible"
-import { toVerseRenderData } from "@/hooks/use-broadcast"
+import { presentQueuedVerseLive } from "@/lib/queue-verse"
 import { switchTranslation } from "@/lib/switch-translation"
 import type { TranscriptSegment } from "@/types"
 import type { DetectionResult } from "@/types"
@@ -205,10 +205,8 @@ export function TranscriptPanel() {
           verse: best.verse,
           text: best.verse_text,
         }
-        const trans = useBibleStore.getState().translations
-          .find((t) => t.id === useBibleStore.getState().activeTranslationId)?.abbreviation ?? "KJV"
         // Push directly to live screen — skip preview in auto mode
-        useBroadcastStore.getState().setLiveVerse(toVerseRenderData(verse, trans))
+        presentQueuedVerseLive(verse, best.confidence)
       }
     }
   })

@@ -102,8 +102,8 @@ export function ProjectorCalibrationSection() {
     <div className="flex flex-col gap-4">
       <p className="text-sm text-muted-foreground">
         Drag the handles to mark the area your projector actually shows on the
-        wall. The projection scales to fit inside it. A live guide appears on the
-        projector while this panel is open.
+        wall. The projection scales to fit inside it. Opening this panel shows a
+        live calibration guide on the projector; closing Settings hides it.
       </p>
 
       <div

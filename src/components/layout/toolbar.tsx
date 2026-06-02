@@ -13,6 +13,7 @@ import { LiveIndicator } from "@/components/ui/live-indicator"
 import { ApiKeyPrompt } from "@/components/ui/api-key-prompt"
 import { PreflightChecklist } from "@/components/preflight-checklist"
 import { startServiceFlow } from "@/lib/start-service"
+import { getWorkspaceMode, getWorkspaceModeCopy } from "@/lib/workspace-mode"
 import { MicIcon, MicOffIcon, Loader2Icon, HomeIcon } from "lucide-react"
 
 /* -------------------------------------------------------------------------- */
@@ -56,6 +57,7 @@ export function Toolbar() {
   const connectionStatus = useTranscriptStore((s) => s.connectionStatus)
   const audioLevel = useAudioStore((s) => s.level)
   const pendingServiceStart = useSessionStore((s) => s.pendingServiceStart)
+  const sessionsMode = useSessionStore((s) => s.sessionsMode)
   const [showKeyPrompt, setShowKeyPrompt] = useState(false)
   const [showPreflight, setShowPreflight] = useState(false)
 
@@ -71,6 +73,13 @@ export function Toolbar() {
   // were resumed but never re-armed for transcription.
   const sessionLive = activeSession?.status === "live"
   const isLive = sessionLive && isTranscribing
+  const workspaceMode = getWorkspaceMode({
+    activeSession,
+    isTranscribing,
+    pendingServiceStart,
+    sessionsMode,
+  })
+  const modeCopy = getWorkspaceModeCopy(workspaceMode)
 
   const handleStartServiceClick = () => {
     setShowPreflight(true)
@@ -125,18 +134,28 @@ export function Toolbar() {
         {activeSession ? (
           <>
             {isLive && <LiveIndicator active={true} />}
-            <span className="max-w-[200px] truncate text-xs font-medium text-foreground">
-              {activeSession.title}
-            </span>
+            <div className="flex min-w-0 flex-col">
+              <span className="max-w-[220px] truncate text-xs font-medium text-foreground">
+                {activeSession.title}
+              </span>
+              <span className="hidden text-[0.625rem] text-muted-foreground sm:inline">
+                {modeCopy.toolbarDetail}
+              </span>
+            </div>
             {isLive && transcribingStartedAt != null && (
               <ElapsedTimer startMs={transcribingStartedAt} />
             )}
             <Badge variant="outline" className="capitalize text-[0.625rem]">
-              {activeSession.status}
+              {modeCopy.toolbarLabel}
             </Badge>
           </>
         ) : (
-          <span className="text-xs text-muted-foreground">No active session</span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-foreground">{modeCopy.toolbarLabel}</span>
+            <span className="hidden text-xs text-muted-foreground sm:inline">
+              {modeCopy.toolbarDetail}
+            </span>
+          </div>
         )}
       </div>
 
@@ -176,7 +195,7 @@ export function Toolbar() {
             ) : (
               <MicIcon className="size-3.5" />
             )}
-            {connectionStatus === "connecting" ? "Connecting…" : "Start Service"}
+            {connectionStatus === "connecting" ? "Connecting…" : modeCopy.primaryAction}
           </Button>
         )}
       </div>

@@ -12,12 +12,21 @@ import { ServicePlanItemEditor } from "./service-plan-item-editor"
 import { TemplateManager } from "@/components/service-plan/template-manager"
 import { Button } from "@/components/ui/button"
 import type { PlanItem } from "@/types"
+import { useSessionStore, useTranscriptStore } from "@/stores"
+import { getWorkspaceMode, getWorkspaceModeCopy } from "@/lib/workspace-mode"
 
 export function ServicePlanPanel() {
   const { plan, activeItemId, pendingAdvanceDeadline, pendingAdvanceTotalMs, setActiveItem, reorderItem } =
     useServicePlan()
   const [editing, setEditing] = useState<PlanItem | null>(null)
   const [templateManagerOpen, setTemplateManagerOpen] = useState(false)
+  const activeSession = useSessionStore((s) => s.activeSession)
+  const pendingServiceStart = useSessionStore((s) => s.pendingServiceStart)
+  const sessionsMode = useSessionStore((s) => s.sessionsMode)
+  const isTranscribing = useTranscriptStore((s) => s.isTranscribing)
+  const modeCopy = getWorkspaceModeCopy(
+    getWorkspaceMode({ activeSession, isTranscribing, pendingServiceStart, sessionsMode })
+  )
 
   /* Keyboard: ↑/↓ navigate, Enter activate, Cmd/Ctrl+↑/↓ reorder. */
   useEffect(() => {
@@ -105,7 +114,7 @@ export function ServicePlanPanel() {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-xs text-muted-foreground">
         <CalendarDaysIcon className="size-6 opacity-40" />
-        <p>Start a session to build a service plan.</p>
+        <p>{modeCopy.servicePlanEmpty}</p>
       </div>
     )
   }
@@ -134,7 +143,7 @@ export function ServicePlanPanel() {
         <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2">
           {plan.items.length === 0 && (
             <div className="px-3 py-4 text-center text-xs text-muted-foreground">
-              Empty plan. Click <span className="font-medium">Add</span> to insert items.
+              {modeCopy.servicePlanEmpty} Click <span className="font-medium">Add</span> to insert items.
             </div>
           )}
           {plan.items.map((item, idx) => (

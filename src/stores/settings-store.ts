@@ -40,6 +40,8 @@ interface SettingsState {
   autoMode: boolean
   confidenceThreshold: number
   cooldownMs: number
+  autoSplitLongVerses: boolean
+  splitWordThreshold: number
   onboardingComplete: boolean
   sttProvider: SttProvider
   enabledHymnals: string[]
@@ -62,6 +64,8 @@ interface SettingsState {
   setAutoMode: (auto: boolean) => void
   setConfidenceThreshold: (threshold: number) => void
   setCooldownMs: (ms: number) => void
+  setAutoSplitLongVerses: (v: boolean) => void
+  setSplitWordThreshold: (n: number) => void
   setOnboardingComplete: (complete: boolean) => void
   setSttProvider: (provider: SttProvider) => void
   setEnabledHymnals: (ids: string[]) => void
@@ -86,6 +90,8 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   autoMode: false,
   confidenceThreshold: 0.8,
   cooldownMs: 2500,
+  autoSplitLongVerses: true,
+  splitWordThreshold: 40,
   onboardingComplete: false,
   sttProvider: "deepgram",
   enabledHymnals: ["ghs", "mhb", "sankey", "sda"],
@@ -108,6 +114,8 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setAutoMode: (autoMode) => set({ autoMode }),
   setConfidenceThreshold: (confidenceThreshold) => set({ confidenceThreshold }),
   setCooldownMs: (cooldownMs) => set({ cooldownMs }),
+  setAutoSplitLongVerses: (autoSplitLongVerses) => set({ autoSplitLongVerses }),
+  setSplitWordThreshold: (splitWordThreshold) => set({ splitWordThreshold }),
   setOnboardingComplete: (onboardingComplete) => set({ onboardingComplete }),
   setSttProvider: (sttProvider) => set({ sttProvider }),
   setEnabledHymnals: (enabledHymnals) => set({ enabledHymnals }),
@@ -152,6 +160,8 @@ export async function hydrateSettings(): Promise<void> {
       recordAudio,
       projectorCalibration,
       brand,
+      autoSplitLongVerses,
+      splitWordThreshold,
     ] = await Promise.all([
       store.get<string>("deepgramApiKey"),
       store.get<string>("assemblyAiApiKey"),
@@ -173,6 +183,8 @@ export async function hydrateSettings(): Promise<void> {
       store.get<boolean>("recordAudio"),
       store.get<CalibrationInsets>("projectorCalibration"),
       store.get<BrandConfig>("brand"),
+      store.get<boolean>("autoSplitLongVerses"),
+      store.get<number>("splitWordThreshold"),
     ])
 
     const s = useSettingsStore.getState()
@@ -211,6 +223,11 @@ export async function hydrateSettings(): Promise<void> {
         momoImagePath: typeof brand.momoImagePath === "string" ? brand.momoImagePath : null,
         jesusImagePath: typeof brand.jesusImagePath === "string" ? brand.jesusImagePath : null,
       })
+    }
+    if (autoSplitLongVerses != null) s.setAutoSplitLongVerses(autoSplitLongVerses)
+    if (splitWordThreshold != null) {
+      const clamped = Math.max(20, Math.min(200, Math.round(splitWordThreshold)))
+      s.setSplitWordThreshold(clamped)
     }
   } catch {
     console.warn("[settings] Failed to load persisted settings, using defaults")
@@ -411,6 +428,29 @@ export async function persistConfidenceThreshold(threshold: number): Promise<voi
     await store.set("confidenceThreshold", threshold)
   } catch {
     console.warn("[settings] Failed to persist confidence threshold")
+  }
+}
+
+/** Persist the auto-split-long-verses toggle to disk. */
+export async function persistAutoSplitLongVerses(v: boolean): Promise<void> {
+  useSettingsStore.getState().setAutoSplitLongVerses(v)
+  try {
+    const store = await getStore()
+    await store.set("autoSplitLongVerses", v)
+  } catch {
+    console.warn("[settings] Failed to persist autoSplitLongVerses")
+  }
+}
+
+/** Persist the long-verse word threshold to disk. Clamps to [20, 200]. */
+export async function persistSplitWordThreshold(n: number): Promise<void> {
+  const clamped = Math.max(20, Math.min(200, Math.round(n)))
+  useSettingsStore.getState().setSplitWordThreshold(clamped)
+  try {
+    const store = await getStore()
+    await store.set("splitWordThreshold", clamped)
+  } catch {
+    console.warn("[settings] Failed to persist splitWordThreshold")
   }
 }
 

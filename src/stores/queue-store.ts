@@ -4,6 +4,8 @@ import { expandSong } from "@/lib/song-expand"
 import { songMeta } from "@/lib/song-meta"
 import { useSongStore } from "./song-store"
 import { useSessionStore } from "./session-store"
+import { useSettingsStore } from "@/stores/settings-store"
+import { splitVerseIntoChunks, wordCount } from "@/lib/verse-splitter"
 
 // localStorage key for the in-flight queue. Tagged with the active session id
 // so a reload mid-service restores that session's queue, while a fresh session
@@ -20,7 +22,7 @@ interface QueueState {
   items: QueueItem[]
   activeIndex: number | null
 
-  addItem: (item: QueueItem) => void
+  addItem: (item: QueueItem) => QueueItem[]
   removeItem: (id: string) => void
   reorderItems: (fromIndex: number, toIndex: number) => void
   setActive: (index: number | null) => void
@@ -47,8 +49,41 @@ export const useQueueStore = create<QueueState>((set, get) => ({
   items: [],
   activeIndex: null,
 
-  addItem: (item) =>
-    set((state) => ({ items: [...state.items, item] })),
+  addItem: (item) => {
+    let inserted: QueueItem[] = [item]
+    set((state) => {
+      // Only verses are eligible to split. Songs/images pass through untouched.
+      if (item.kind !== "verse") {
+        return { items: [...state.items, item] }
+      }
+      const settings = useSettingsStore.getState()
+      if (!settings.autoSplitLongVerses) {
+        return { items: [...state.items, item] }
+      }
+      if (wordCount(item.verse.text) <= settings.splitWordThreshold) {
+        return { items: [...state.items, item] }
+      }
+      const chunks = splitVerseIntoChunks(item.verse.text)
+      if (chunks.length <= 1) {
+        return { items: [...state.items, item] }
+      }
+      const groupId = crypto.randomUUID()
+      const expanded = chunks.map((text, i) => ({
+        ...item,
+        id: crypto.randomUUID(),
+        reference: `${item.reference} (${i + 1}/${chunks.length})`,
+        chunk: {
+          groupId,
+          index: i + 1,
+          total: chunks.length,
+          text,
+        },
+      }))
+      inserted = expanded
+      return { items: [...state.items, ...expanded] }
+    })
+    return inserted
+  },
   removeItem: (id) =>
     set((state) => ({
       items: state.items.filter((i) => i.id !== id),

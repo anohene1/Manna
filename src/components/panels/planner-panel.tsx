@@ -15,6 +15,7 @@ import {
 } from "lucide-react"
 import { useBibleStore, useQueueStore, useBroadcastStore } from "@/stores"
 import { toVerseRenderData } from "@/hooks/use-broadcast"
+import { presentQueuedVerseLive } from "@/lib/queue-verse"
 import type { Verse } from "@/types"
 
 interface PlannedVerse {
@@ -104,8 +105,7 @@ export function PlannerPanel() {
   }
 
   const handleGoLive = (item: PlannedVerse) => {
-    const trans = translations.find(t => t.id === activeTranslationId)?.abbreviation ?? "KJV"
-    useBroadcastStore.getState().setLiveVerse(toVerseRenderData(item.verse, trans))
+    presentQueuedVerseLive(item.verse)
   }
 
   return (

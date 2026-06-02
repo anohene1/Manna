@@ -1,14 +1,35 @@
 import { useBroadcastStore } from "@/stores/broadcast-store"
 import { useBibleStore } from "@/stores/bible-store"
 import { invoke } from "@tauri-apps/api/core"
-import type { Book, VerseRenderData } from "@/types"
+import type { Book, QueueItem, VerseRenderData } from "@/types"
 import type { Verse } from "@/types"
 
-export function toVerseRenderData(verse: Verse, translation: string): VerseRenderData {
+export function toVerseRenderData(
+  verse: Verse,
+  translation: string,
+  overrides?: { bodyText?: string; referenceOverride?: string },
+): VerseRenderData {
+  const reference =
+    overrides?.referenceOverride
+      ? overrides.referenceOverride
+      : `${verse.book_name} ${verse.chapter}:${verse.verse} (${translation})`
+  const text = overrides?.bodyText ?? verse.text
   return {
-    reference: `${verse.book_name} ${verse.chapter}:${verse.verse} (${translation})`,
-    segments: [{ verseNumber: verse.verse, text: verse.text }],
+    reference,
+    segments: [{ text, verseNumber: verse.verse }],
   }
+}
+
+export function queueVerseToRenderData(
+  item: Extract<QueueItem, { kind: "verse" }>,
+  translation: string,
+): VerseRenderData {
+  return item.chunk
+    ? toVerseRenderData(item.verse, translation, {
+        bodyText: item.chunk.text,
+        referenceOverride: `${item.reference} (${translation})`,
+      })
+    : toVerseRenderData(item.verse, translation)
 }
 
 export function deriveLiveVerse({

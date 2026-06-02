@@ -467,9 +467,9 @@ interface ParsedLyrics {
 function stripGeniusPreamble(raw: string): string {
   return raw
     .split("\n")
+    .map((line) => line.replace(/^\s*\d+\s*Contributors\s*/i, ""))
     .filter((line) => {
       const t = line.trim()
-      if (/^\d+\s*Contributors/i.test(t)) return false
       if (/^Read More\s*$/i.test(t)) return false
       if (/^Translations(\s|$)/i.test(t)) return false
       return true

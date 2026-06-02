@@ -27,7 +27,11 @@ describe("broadcast store sync", () => {
     emitMock.mockClear()
     useBroadcastStore.getState().syncBroadcastOutput()
 
-    expect(emitMock).toHaveBeenCalledTimes(2)
+    expect(emitMock).toHaveBeenCalledTimes(3)
+    expect(emitMock).toHaveBeenCalledWith(
+      "projector:calibration",
+      expect.objectContaining({ editing: false }),
+    )
     expect(emitMock).toHaveBeenCalledWith(
       "broadcast:verse-update:main",
       expect.objectContaining({

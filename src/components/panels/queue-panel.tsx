@@ -17,7 +17,7 @@ import {
   ChevronDownIcon,
 } from "lucide-react"
 import { useQueueStore, useBroadcastStore, useBibleStore, useSongStore } from "@/stores"
-import { toVerseRenderData } from "@/hooks/use-broadcast"
+import { queueVerseToRenderData, toVerseRenderData } from "@/hooks/use-broadcast"
 import { bibleActions } from "@/hooks/use-bible"
 import { songStanzaToRenderData } from "@/lib/song-to-render"
 import type { QueueItem, Verse } from "@/types"
@@ -47,7 +47,12 @@ function QueueItemCard({
     bibleActions.selectVerse(item.verse)
     const translation = useBibleStore.getState().translations
       .find(t => t.id === useBibleStore.getState().activeTranslationId)?.abbreviation ?? "KJV"
-    const verseData = toVerseRenderData(item.verse, translation)
+    const verseData = item.kind === "verse" && item.chunk
+      ? toVerseRenderData(item.verse, translation, {
+          bodyText: item.chunk.text,
+          referenceOverride: `${item.reference} (${translation})`,
+        })
+      : toVerseRenderData(item.verse, translation)
     useBroadcastStore.getState().setPreviewVerse(verseData)
     useBroadcastStore.getState().goLive()
   }
@@ -68,7 +73,13 @@ function QueueItemCard({
     bibleActions.selectVerse(item.verse)
     const translation = useBibleStore.getState().translations
       .find(t => t.id === useBibleStore.getState().activeTranslationId)?.abbreviation ?? "KJV"
-    useBroadcastStore.getState().setPreviewVerse(toVerseRenderData(item.verse, translation))
+    const verseData = item.kind === "verse" && item.chunk
+      ? toVerseRenderData(item.verse, translation, {
+          bodyText: item.chunk.text,
+          referenceOverride: `${item.reference} (${translation})`,
+        })
+      : toVerseRenderData(item.verse, translation)
+    useBroadcastStore.getState().setPreviewVerse(verseData)
   }
 
   const handleRemove = () => {
@@ -109,7 +120,7 @@ function QueueItemCard({
               "line-clamp-1 font-serif text-[10px] leading-snug",
               isActive ? "text-primary-foreground/70" : "text-muted-foreground"
             )}>
-              {item.verse.text}
+              {item.chunk?.text ?? item.verse.text}
             </p>
           ) : item.kind === "image" ? (
             <div className="mt-1 flex items-center justify-center overflow-hidden rounded bg-black/40 ring-1 ring-border/40">
@@ -161,7 +172,15 @@ type QueueBlock =
   | { kind: "flat"; item: QueueItem; index: number }
   | {
       kind: "group"
+      groupKind: "song"
       songId: string
+      firstIndex: number
+      items: { item: QueueItem; index: number }[]
+    }
+  | {
+      kind: "group"
+      groupKind: "verse"
+      verseGroupId: string
       firstIndex: number
       items: { item: QueueItem; index: number }[]
     }
@@ -176,6 +195,8 @@ function buildBlocks(items: QueueItem[]): QueueBlock[] {
   let i = 0
   while (i < items.length) {
     const item = items[i]
+
+    // Song-stanza group: contiguous items sharing songId.
     if (item.kind === "song-stanza") {
       const songId = item.songId
       const groupItems: { item: QueueItem; index: number }[] = []
@@ -187,15 +208,34 @@ function buildBlocks(items: QueueItem[]): QueueBlock[] {
         i++
       }
       if (groupItems.length > 1) {
-        blocks.push({ kind: "group", songId, firstIndex, items: groupItems })
+        blocks.push({ kind: "group", groupKind: "song", songId, firstIndex, items: groupItems })
       } else {
-        // Single stanza — don't bother grouping, render flat.
         blocks.push({ kind: "flat", item: groupItems[0].item, index: groupItems[0].index })
       }
-    } else {
-      blocks.push({ kind: "flat", item, index: i })
-      i++
+      continue
     }
+
+    // Verse-chunk group: contiguous chunked verses sharing chunk.groupId.
+    if (item.kind === "verse" && item.chunk) {
+      const groupId = item.chunk.groupId
+      const groupItems: { item: QueueItem; index: number }[] = []
+      const firstIndex = i
+      while (i < items.length) {
+        const next = items[i]
+        if (next.kind !== "verse" || next.chunk?.groupId !== groupId) break
+        groupItems.push({ item: next, index: i })
+        i++
+      }
+      if (groupItems.length > 1) {
+        blocks.push({ kind: "group", groupKind: "verse", verseGroupId: groupId, firstIndex, items: groupItems })
+      } else {
+        blocks.push({ kind: "flat", item: groupItems[0].item, index: groupItems[0].index })
+      }
+      continue
+    }
+
+    blocks.push({ kind: "flat", item, index: i })
+    i++
   }
   return blocks
 }
@@ -204,7 +244,9 @@ function buildBlocks(items: QueueItem[]): QueueBlock[] {
  *  so removing/reordering items elsewhere in the queue doesn't shift the key
  *  and lose the collapsed state. */
 function groupKey(block: Extract<QueueBlock, { kind: "group" }>): string {
-  return `${block.songId}:${block.items[0].item.id}`
+  const idPart = block.items[0].item.id
+  if (block.groupKind === "song") return `song:${block.songId}:${idPart}`
+  return `verse:${block.verseGroupId}:${idPart}`
 }
 
 /** Collapse keys for every song GROUP in the queue, in order. */
@@ -214,26 +256,32 @@ function groupKeys(items: QueueItem[]): string[] {
     .map(groupKey)
 }
 
-function QueueSongGroup({
-  songId,
-  firstIndex,
-  items,
+function QueueGroup({
+  block,
   collapsed,
   onToggle,
   activeIndex,
   isNewest,
 }: {
-  songId: string
-  firstIndex: number
-  items: { item: QueueItem; index: number }[]
+  block: Extract<QueueBlock, { kind: "group" }>
   collapsed: boolean
   onToggle: () => void
   activeIndex: number
-  isNewest?: boolean
+  isNewest: boolean
 }) {
-  const songTitle = useSongStore((s) => s.songs.find((x) => x.id === songId)?.title ?? null)
-  const activeChild = items.find((x) => x.index === activeIndex)
-  const playedCount = activeChild ? activeChild.index - firstIndex + 1 : 0
+  const songTitle = useSongStore((s) =>
+    block.groupKind === "song"
+      ? s.songs.find((x) => x.id === block.songId)?.title ?? null
+      : null,
+  )
+  const activeChild = block.items.find((x) => x.index === activeIndex)
+  const playedCount = activeChild ? activeChild.index - block.firstIndex + 1 : 0
+
+  const label =
+    block.groupKind === "song"
+      ? songTitle ?? `Song ${block.songId}`
+      : stripChunkSuffix(block.items[0].item.reference)
+  const Icon = block.groupKind === "song" ? MusicIcon : BookOpenIcon
 
   return (
     <div className="flex flex-col gap-1" data-newest-group={isNewest ? "true" : undefined}>
@@ -243,16 +291,18 @@ function QueueSongGroup({
           "flex items-center gap-2 rounded-md border px-2 py-1.5 text-left text-xs transition-colors",
           activeChild
             ? "border-red-500/40 bg-red-500/5 hover:bg-red-500/10"
+            : isNewest
+            ? "border-primary/30 bg-primary/5 hover:bg-primary/10"
             : "border-border bg-muted/30 hover:bg-muted/50",
         )}
       >
         <ChevronDownIcon
           className={cn("size-3 shrink-0 transition-transform", collapsed && "-rotate-90")}
         />
-        <MusicIcon className="size-3 shrink-0 text-muted-foreground" />
-        <span className="truncate font-medium">{songTitle ?? `Song ${songId}`}</span>
+        <Icon className="size-3 shrink-0 text-muted-foreground" />
+        <span className="truncate font-medium">{label}</span>
         <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
-          {activeChild ? `${playedCount}/${items.length}` : `${items.length} stanzas`}
+          {activeChild ? `${playedCount}/${block.items.length}` : `${block.items.length} slides`}
         </span>
         {activeChild && (
           <span className="shrink-0 text-[9px] font-semibold text-red-500">LIVE</span>
@@ -260,7 +310,7 @@ function QueueSongGroup({
       </button>
       {!collapsed && (
         <div className="ml-2 flex flex-col gap-1 border-l border-border pl-2">
-          {items.map(({ item, index }) => (
+          {block.items.map(({ item, index }) => (
             <QueueItemCard
               key={item.id}
               item={item}
@@ -272,6 +322,11 @@ function QueueSongGroup({
       )}
     </div>
   )
+}
+
+/** Helper: drop the trailing `(N/M)` from a chunked verse's reference. */
+function stripChunkSuffix(reference: string): string {
+  return reference.replace(/\s*\(\d+\/\d+\)\s*$/, "").trim()
 }
 
 export function QueuePanel() {
@@ -337,7 +392,8 @@ export function QueuePanel() {
   }
 
   const addVerseToQueue = (verse: Verse) => {
-    useQueueStore.getState().addItem({
+    const firstInsertedIndex = useQueueStore.getState().items.length
+    const inserted = useQueueStore.getState().addItem({
       kind: "verse",
       id: crypto.randomUUID(),
       verse,
@@ -346,6 +402,13 @@ export function QueuePanel() {
       source: "manual",
       added_at: Date.now(),
     })
+    useQueueStore.getState().setActive(firstInsertedIndex)
+    const first = inserted[0]
+    if (first?.kind === "verse") {
+      const translation = useBibleStore.getState().translations
+        .find(t => t.id === useBibleStore.getState().activeTranslationId)?.abbreviation ?? "KJV"
+      useBroadcastStore.getState().setPreviewVerse(queueVerseToRenderData(first, translation))
+    }
     setSearchResults([])
     setSearchQuery("")
   }
@@ -444,11 +507,9 @@ export function QueuePanel() {
             }
             const key = groupKey(block)
             return (
-              <QueueSongGroup
+              <QueueGroup
                 key={key}
-                songId={block.songId}
-                firstIndex={block.firstIndex}
-                items={block.items}
+                block={block}
                 collapsed={collapsedKeys.has(key)}
                 onToggle={() => toggleCollapsed(key)}
                 activeIndex={activeIndex}
