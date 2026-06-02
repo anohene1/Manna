@@ -73,6 +73,35 @@ function downloadFile(content: string, filename: string, mime: string) {
   URL.revokeObjectURL(url)
 }
 
+function hasText(value: string | null | undefined) {
+  return Boolean(value?.trim())
+}
+
+function quoteSpeaker(sessionSpeaker: string | null | undefined, quoteSpeaker?: string) {
+  return sessionSpeaker?.trim() || quoteSpeaker?.trim() || "Pastor"
+}
+
+function hasSermonFlow(summary: SermonSummary) {
+  const flow = summary.sermon_flow
+  return (
+    hasText(flow.opening) ||
+    flow.main_points.length > 0 ||
+    hasText(flow.conclusion) ||
+    hasText(flow.response)
+  )
+}
+
+function hasDevotional(summary: SermonSummary) {
+  const devotional = summary.devotional
+  return (
+    hasText(devotional.scripture) ||
+    hasText(devotional.observation) ||
+    hasText(devotional.application) ||
+    hasText(devotional.prayer) ||
+    devotional.reflection_questions.length > 0
+  )
+}
+
 export function SessionDetail({ sessionId, sessionTitle, initialTab, onBack }: SessionDetailProps) {
   const [tab, setTab] = useState<DetailTab>(initialTab ?? "summary")
   const [session, setSession] = useState<SermonSession | null>(null)
@@ -743,36 +772,95 @@ export function SessionDetail({ sessionId, sessionTitle, initialTab, onBack }: S
                 <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,360px)]">
                   {/* Left column — narrative */}
                   <div className="flex flex-col gap-3">
-                    <SummaryCard title="Topic" tone="primary">
-                      <p className="text-sm font-medium text-foreground">{summary.topic}</p>
-                    </SummaryCard>
+                    {(hasText(summary.title) || hasText(summary.big_idea)) && (
+                      <SummaryCard title="Big Idea" tone="primary">
+                        {hasText(summary.title) && (
+                          <p className="text-sm font-semibold text-foreground">{summary.title}</p>
+                        )}
+                        {hasText(summary.big_idea) && (
+                          <p className="text-xs leading-relaxed text-foreground/85">{summary.big_idea}</p>
+                        )}
+                      </SummaryCard>
+                    )}
 
                     {summary.key_verses.length > 0 && (
                       <SummaryCard title="Key Verses">
-                        <ul className="flex flex-wrap gap-1.5">
+                        <ul className="flex flex-col gap-2">
                           {summary.key_verses.map((v, i) => (
                             <li
                               key={i}
-                              className="rounded-full bg-primary/12 px-2 py-0.5 text-[11px] font-medium text-primary"
-                              title={v.reason || undefined}
+                              className="rounded-md border border-primary/15 bg-primary/5 px-2.5 py-2"
                             >
-                              {v.reference}
+                              <p className="text-xs font-semibold text-primary">{v.reference}</p>
+                              {hasText(v.reason) && (
+                                <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{v.reason}</p>
+                              )}
                             </li>
                           ))}
                         </ul>
                       </SummaryCard>
                     )}
 
-                    {summary.main_points.length > 0 && (
-                      <SummaryCard title="Main Points">
-                        <ul className="flex flex-col gap-1.5">
-                          {summary.main_points.map((p, i) => (
-                            <li key={i} className="flex gap-2 text-xs leading-relaxed text-foreground/85">
-                              <span className="shrink-0 text-muted-foreground/60">{i + 1}.</span>
-                              <span>{p}</span>
-                            </li>
-                          ))}
-                        </ul>
+                    {hasSermonFlow(summary) && (
+                      <SummaryCard title="Sermon Flow">
+                        <div className="flex flex-col gap-3">
+                          {hasText(summary.sermon_flow.opening) && (
+                            <SummaryField label="Opening" value={summary.sermon_flow.opening} />
+                          )}
+
+                          {summary.sermon_flow.main_points.length > 0 && (
+                            <div className="flex flex-col gap-2">
+                              {summary.sermon_flow.main_points.map((point, i) => (
+                                <div key={i} className="rounded-md border border-border bg-card/50 p-3">
+                                  <div className="flex gap-2">
+                                    <span className="shrink-0 text-[10px] font-semibold text-muted-foreground/70">
+                                      {i + 1}.
+                                    </span>
+                                    <div className="min-w-0 flex-1">
+                                      <p className="text-xs font-semibold leading-relaxed text-foreground">
+                                        {point.point}
+                                      </p>
+                                      {hasText(point.explanation) && (
+                                        <p className="mt-1 text-[11px] leading-relaxed text-foreground/80">
+                                          {point.explanation}
+                                        </p>
+                                      )}
+                                      {point.scripture_refs.length > 0 && (
+                                        <div className="mt-2 flex flex-wrap gap-1">
+                                          {point.scripture_refs.map((ref) => (
+                                            <span
+                                              key={ref}
+                                              className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary"
+                                            >
+                                              {ref}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      )}
+                                      {hasText(point.illustration_or_moment) && (
+                                        <SummaryField
+                                          label="Moment"
+                                          value={point.illustration_or_moment}
+                                          compact
+                                        />
+                                      )}
+                                      {hasText(point.application) && (
+                                        <SummaryField label="Application" value={point.application} compact />
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {hasText(summary.sermon_flow.conclusion) && (
+                            <SummaryField label="Conclusion" value={summary.sermon_flow.conclusion} />
+                          )}
+                          {hasText(summary.sermon_flow.response) && (
+                            <SummaryField label="Response" value={summary.sermon_flow.response} />
+                          )}
+                        </div>
                       </SummaryCard>
                     )}
 
@@ -790,8 +878,42 @@ export function SessionDetail({ sessionId, sessionTitle, initialTab, onBack }: S
                     )}
                   </div>
 
-                  {/* Right column — quotes */}
-                  <aside className="lg:sticky lg:top-2 lg:self-start">
+                  {/* Right column — devotional + quotes */}
+                  <aside className="flex flex-col gap-3 lg:sticky lg:top-2 lg:self-start">
+                    {hasDevotional(summary) && (
+                      <SummaryCard title="Devotional Follow-up">
+                        <div className="flex flex-col gap-2.5">
+                          {hasText(summary.devotional.scripture) && (
+                            <SummaryField label="Scripture" value={summary.devotional.scripture} />
+                          )}
+                          {hasText(summary.devotional.observation) && (
+                            <SummaryField label="Observation" value={summary.devotional.observation} />
+                          )}
+                          {hasText(summary.devotional.application) && (
+                            <SummaryField label="Application" value={summary.devotional.application} />
+                          )}
+                          {hasText(summary.devotional.prayer) && (
+                            <SummaryField label="Prayer" value={summary.devotional.prayer} />
+                          )}
+                          {summary.devotional.reflection_questions.length > 0 && (
+                            <div>
+                              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                Reflection Questions
+                              </p>
+                              <ul className="mt-1.5 flex flex-col gap-1.5">
+                                {summary.devotional.reflection_questions.map((question, i) => (
+                                  <li key={i} className="flex gap-2 text-xs leading-relaxed text-foreground/85">
+                                    <span className="shrink-0 text-muted-foreground/60">{i + 1}.</span>
+                                    <span>{question}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      </SummaryCard>
+                    )}
+
                     {summary.quotes && summary.quotes.length > 0 ? (
                       <SummaryCard title="Quotes" tone="primary">
                         <ul className="flex flex-col gap-2">
@@ -805,13 +927,11 @@ export function SessionDetail({ sessionId, sessionTitle, initialTab, onBack }: S
                               </p>
                               <div className="flex items-center justify-between gap-2">
                                 <span className="text-[10px] text-muted-foreground">
-                                  {q.speaker?.trim() || session?.speaker || ""}
+                                  {quoteSpeaker(session?.speaker, q.speaker)}
                                 </span>
                                 <button
                                   onClick={() => {
-                                    const line = q.speaker?.trim()
-                                      ? `“${q.text}” — ${q.speaker}`
-                                      : `“${q.text}”`
+                                    const line = `“${q.text}” — ${quoteSpeaker(session?.speaker, q.speaker)}`
                                     navigator.clipboard.writeText(line)
                                   }}
                                   className="rounded px-1.5 py-0.5 text-[10px] text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100"
@@ -860,6 +980,25 @@ function SummaryCard({
         {title}
       </span>
       {children}
+    </div>
+  )
+}
+
+function SummaryField({
+  label,
+  value,
+  compact = false,
+}: {
+  label: string
+  value: string
+  compact?: boolean
+}) {
+  return (
+    <div className={compact ? "mt-2" : ""}>
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </p>
+      <p className="mt-1 text-xs leading-relaxed text-foreground/85">{value}</p>
     </div>
   )
 }
