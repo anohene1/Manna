@@ -643,13 +643,122 @@ const BOLD_PROCLAMATION: BroadcastTheme = {
   },
 }
 
+const BOLD_CRIMSON: BroadcastTheme = {
+  ...BOLD_PROCLAMATION,
+  id: "builtin-bold-crimson",
+  name: "Bold Crimson",
+  background: {
+    type: "gradient",
+    color: "#160708",
+    gradient: {
+      type: "linear",
+      angle: 145,
+      stops: [
+        { color: "#160708", position: 0 },
+        { color: "#5b1016", position: 58 },
+        { color: "#d4a15f", position: 100 },
+      ],
+    },
+    image: null,
+  },
+  verseText: {
+    ...BOLD_PROCLAMATION.verseText,
+    color: "#fff8ee",
+    shadow: { color: "rgba(0,0,0,0.72)", blur: 18, x: 0, y: 5 },
+  },
+  verseNumbers: {
+    ...BOLD_PROCLAMATION.verseNumbers,
+    color: "#f8c978",
+  },
+  reference: {
+    ...BOLD_PROCLAMATION.reference,
+    color: "#f8c978",
+  },
+  divider: {
+    ...BOLD_PROCLAMATION.divider,
+    color: "#f8c978",
+  },
+}
+
+const BOLD_COBALT: BroadcastTheme = {
+  ...BOLD_PROCLAMATION,
+  id: "builtin-bold-cobalt",
+  name: "Bold Cobalt",
+  background: {
+    type: "gradient",
+    color: "#06121f",
+    gradient: {
+      type: "radial",
+      angle: 0,
+      stops: [
+        { color: "#163a66", position: 0 },
+        { color: "#06121f", position: 72 },
+        { color: "#02050a", position: 100 },
+      ],
+    },
+    image: null,
+  },
+  verseText: {
+    ...BOLD_PROCLAMATION.verseText,
+    color: "#f4fbff",
+    shadow: { color: "rgba(0,0,0,0.75)", blur: 20, x: 0, y: 5 },
+  },
+  verseNumbers: {
+    ...BOLD_PROCLAMATION.verseNumbers,
+    color: "#8fd8ff",
+  },
+  reference: {
+    ...BOLD_PROCLAMATION.reference,
+    color: "#8fd8ff",
+  },
+  divider: {
+    ...BOLD_PROCLAMATION.divider,
+    color: "#8fd8ff",
+  },
+  logo: {
+    ...BOLD_PROCLAMATION.logo!,
+    opacity: 0.9,
+  },
+}
+
+const BOLD_CHAPEL: BroadcastTheme = {
+  ...BOLD_PROCLAMATION,
+  id: "builtin-bold-chapel",
+  name: "Bold Chapel",
+  background: {
+    type: "solid",
+    color: "#f8f5ef",
+    gradient: null,
+    image: null,
+  },
+  verseText: {
+    ...BOLD_PROCLAMATION.verseText,
+    color: "#171717",
+    fontWeight: 700,
+    shadow: null,
+  },
+  verseNumbers: {
+    ...BOLD_PROCLAMATION.verseNumbers,
+    color: "#8a5a20",
+  },
+  reference: {
+    ...BOLD_PROCLAMATION.reference,
+    color: "#8a5a20",
+  },
+  divider: {
+    ...BOLD_PROCLAMATION.divider,
+    color: "#8a5a20",
+  },
+  logo: {
+    ...BOLD_PROCLAMATION.logo!,
+    url: "/manna-logo.png",
+    opacity: 0.9,
+  },
+}
+
 export const BUILTIN_THEMES: BroadcastTheme[] = [
   BOLD_PROCLAMATION,
-  CLASSIC_DARK,
-  MODERN_LIGHT,
-  BROADCAST_OVERLAY,
-  WARM_WORSHIP,
-  PURE_MINIMAL,
-  WARM_DARK,
-  PURE_MINIMAL_LIGHT,
+  BOLD_CRIMSON,
+  BOLD_COBALT,
+  BOLD_CHAPEL,
 ]

@@ -178,8 +178,16 @@ function anchorPosition(
       x = canvasWidth - areaWidth
       y = 0
       break
+    case "center-left":
+      x = 0
+      y = (canvasHeight - areaHeight) / 2
+      break
     case "center":
       x = (canvasWidth - areaWidth) / 2
+      y = (canvasHeight - areaHeight) / 2
+      break
+    case "center-right":
+      x = canvasWidth - areaWidth
       y = (canvasHeight - areaHeight) / 2
       break
     case "bottom-left":
@@ -286,9 +294,9 @@ function drawBackground(
       ctx.save()
 
       if (bg.image.blur > 0) {
-        ctx.filter = `blur(${bg.image.blur}px) brightness(${bg.image.brightness})`
-      } else if (bg.image.brightness !== 1) {
-        ctx.filter = `brightness(${bg.image.brightness})`
+        ctx.filter = `blur(${bg.image.blur}px) brightness(${bg.image.brightness}%)`
+      } else if (bg.image.brightness !== 100) {
+        ctx.filter = `brightness(${bg.image.brightness}%)`
       }
 
       let drawX = 0

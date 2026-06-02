@@ -1,15 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const emitMock = vi.fn()
+const invokeMock = vi.fn()
 
 vi.mock("@tauri-apps/api/event", () => ({
   emit: emitMock,
+}))
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: invokeMock,
 }))
 
 describe("broadcast store sync", () => {
   beforeEach(async () => {
     emitMock.mockReset()
     emitMock.mockResolvedValue(undefined)
+    invokeMock.mockReset()
+    invokeMock.mockResolvedValue(undefined)
     vi.resetModules()
   })
 
@@ -46,5 +53,50 @@ describe("broadcast store sync", () => {
         verse: expect.objectContaining({ reference: "John 3:16" }),
       }),
     )
+  })
+
+  it("updates nested draft fields used by designer sliders", async () => {
+    const { useBroadcastStore } = await import("./broadcast-store")
+    const builtin = useBroadcastStore.getState().themes[0]
+
+    useBroadcastStore.getState().startEditing(builtin.id)
+    useBroadcastStore.getState().updateDraftNested("verseText.fontSize", 88)
+
+    expect(useBroadcastStore.getState().draftTheme?.verseText.fontSize).toBe(88)
+  })
+
+  it("saving a draft based on a built-in persists the new custom theme", async () => {
+    const { useBroadcastStore } = await import("./broadcast-store")
+    const builtin = useBroadcastStore.getState().themes[0]
+
+    useBroadcastStore.getState().startEditing(builtin.id)
+    useBroadcastStore.getState().saveDraft()
+
+    const custom = useBroadcastStore.getState().draftTheme
+    expect(custom).toEqual(expect.objectContaining({
+      builtin: false,
+      name: `${builtin.name} (Custom)`,
+    }))
+    expect(invokeMock).toHaveBeenCalledWith(
+      "save_custom_theme",
+      expect.objectContaining({
+        id: custom?.id,
+        name: custom?.name,
+        themeJson: expect.stringContaining(`"id":"${custom?.id}"`),
+      }),
+    )
+  })
+
+  it("duplicating a theme selects and edits the new custom copy", async () => {
+    const { useBroadcastStore } = await import("./broadcast-store")
+    const builtin = useBroadcastStore.getState().themes[0]
+
+    useBroadcastStore.getState().duplicateTheme(builtin.id)
+
+    const state = useBroadcastStore.getState()
+    const copy = state.themes.find((theme) => theme.name === `${builtin.name} Copy`)
+    expect(copy).toEqual(expect.objectContaining({ builtin: false }))
+    expect(state.editingThemeId).toBe(copy?.id)
+    expect(state.draftTheme?.id).toBe(copy?.id)
   })
 })

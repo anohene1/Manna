@@ -95,22 +95,31 @@ function sameVerseIdentity(
 /** Immutably set a dot-path value, cloning each container along the way.
  *  Numeric path segments index into arrays (e.g. `"items.0.label"`). */
 function setNestedValue<T extends Nested>(obj: T, path: string, value: unknown): T {
-  const [head, ...rest] = path.split(".")
-  const isIndex = /^\d+$/.test(head)
-  const key = (isIndex ? Number(head) : head) as keyof Nested
-  const next: Nested = Array.isArray(obj) ? [...obj] : { ...obj }
+  const parts = path.split(".").filter(Boolean)
+  if (parts.length === 0) return obj
 
-  if (rest.length === 0) {
-    (next as Record<string | number, unknown>)[key as string | number] = value
-  } else {
-    const child = (obj as Record<string | number, unknown>)[key as string | number]
-    const childContainer: Nested =
-      child && typeof child === "object" ? (child as Nested) : /^\d+$/.test(rest[0]) ? [] : {}
-    (next as Record<string | number, unknown>)[key as string | number] =
-      setNestedValue(childContainer, rest.join("."), value)
+  const setAt = (current: unknown, index: number): unknown => {
+    const key = parts[index]
+    const property = /^\d+$/.test(key) ? Number(key) : key
+    const next = Array.isArray(current)
+      ? [...current]
+      : current && typeof current === "object"
+        ? { ...(current as Record<string, unknown>) }
+        : typeof property === "number"
+          ? []
+          : {}
+    const target = next as Record<string | number, unknown>
+
+    if (index === parts.length - 1) {
+      target[property] = value
+    } else {
+      const child = (current as Record<string | number, unknown> | null | undefined)?.[property]
+      target[property] = setAt(child, index + 1)
+    }
+    return next
   }
 
-  return next as T
+  return setAt(obj, 0) as T
 }
 
 export const useBroadcastStore = create<BroadcastState>((set, get) => ({
@@ -195,7 +204,12 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
       createdAt: Date.now(),
       updatedAt: Date.now(),
     }
-    set((s) => ({ themes: [...s.themes, newTheme] }))
+    set((s) => ({
+      themes: [...s.themes, newTheme],
+      editingThemeId: newTheme.id,
+      draftTheme: newTheme,
+      selectedElement: "verse",
+    }))
   },
   syncBroadcastOutputFor: (outputId: string) => {
     const s = get()
@@ -395,8 +409,11 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
         createdAt: Date.now(),
         updatedAt: Date.now(),
       }
+      get().saveTheme(customTheme)
       set((s) => ({
-        themes: [...s.themes, customTheme],
+        themes: s.themes.some((theme) => theme.id === customTheme.id)
+          ? s.themes
+          : [...s.themes, customTheme],
         activeThemeId: customTheme.id,
         editingThemeId: customTheme.id,
         draftTheme: customTheme,

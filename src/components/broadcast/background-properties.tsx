@@ -204,8 +204,11 @@ function ImageSection() {
             input.onchange = (e) => {
               const file = (e.target as HTMLInputElement).files?.[0]
               if (file) {
-                const url = URL.createObjectURL(file)
-                update("background.image.url", url)
+                const reader = new FileReader()
+                reader.onload = () => {
+                  update("background.image.url", reader.result as string)
+                }
+                reader.readAsDataURL(file)
               }
             }
             input.click()
