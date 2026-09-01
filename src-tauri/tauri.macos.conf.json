@@ -1,0 +1,7 @@
+{
+  "bundle": {
+    "macOS": {
+      "frameworks": ["../sdk/ndi/macos/libndi.dylib"]
+    }
+  }
+}

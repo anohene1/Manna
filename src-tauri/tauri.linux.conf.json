@@ -1,0 +1,7 @@
+{
+  "bundle": {
+    "resources": {
+      "../sdk/ndi/linux/libndi.so": "sdk/ndi/linux/libndi.so"
+    }
+  }
+}

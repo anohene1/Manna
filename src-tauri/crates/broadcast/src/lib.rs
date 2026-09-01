@@ -13,3 +13,5 @@
 pub mod ndi;
 pub mod ndi_input;
 mod ndi_sdk;
+
+pub use ndi_sdk::{configure_resource_dir, NdiSdkConfigurationError};

@@ -411,6 +411,19 @@ pub fn run() {
         .setup(|app| {
             use tauri::Manager;
 
+            match app.path().resource_dir() {
+                Ok(resource_dir) => {
+                    if let Err(error) =
+                        rhema_broadcast::configure_resource_dir(resource_dir)
+                    {
+                        log::warn!("[ndi] could not configure resource directory: {error}");
+                    }
+                }
+                Err(error) => {
+                    log::warn!("[ndi] could not resolve application resource directory: {error}");
+                }
+            }
+
             // Hold a keepawake assertion for the app's lifetime so the laptop
             // doesn't idle-sleep during a service. Display + idle sleep are
             // blocked; system sleep (lid close) is honored. The handle is

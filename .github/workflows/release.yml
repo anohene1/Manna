@@ -45,6 +45,9 @@ jobs:
       - name: Install frontend deps
         run: bun install
 
+      - name: Download NDI SDK runtimes
+        run: bun run download:ndi-sdk
+
       - name: Run setup recipe
         shell: bash
         env:

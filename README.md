@@ -227,9 +227,7 @@ Required for NDI input or output. The command downloads the headers and platform
 bun run download:ndi-sdk
 ```
 
-In development, the Rust loader reads the runtime directly from `sdk/ndi/<platform>/`. A working NDI feed in `tauri dev` therefore confirms that the local SDK exists, but not that an installer contains it.
-
-> **Packaging note:** the current Tauri flavor files do not yet include the NDI runtime as a bundled resource, and the loader currently resolves it from the repository. Before distributing an installer to another computer, add the platform library to the Tauri resource bundle and resolve it from `resource_dir`; otherwise NDI may be unavailable outside the build workspace.
+In development, the Rust loader reads the runtime directly from `sdk/ndi/<platform>/`. Production installers bundle only the current platform's runtime; on macOS the dylib lives in the app's signable `Frameworks` directory, while Windows and Linux resolve it from application resources. Run the download command before a local production build; the release workflow does this automatically.
 
 ### Run in development
 

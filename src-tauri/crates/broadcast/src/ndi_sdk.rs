@@ -7,6 +7,27 @@ use thiserror::Error;
 type NdiInitializeFn = unsafe extern "C" fn() -> bool;
 
 static NDI_SDK: OnceLock<Result<Arc<NdiSdk>, NdiSdkError>> = OnceLock::new();
+static RESOURCE_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+#[derive(Debug, Error)]
+pub enum NdiSdkConfigurationError {
+    #[error("NDI resource directory was already configured")]
+    AlreadyConfigured,
+}
+
+/// Sets the installed application's resource directory before the NDI SDK is loaded.
+///
+/// Development builds retain a repository-root fallback, but packaged builds
+/// resolve the platform runtime from this directory.
+///
+/// # Errors
+///
+/// Returns [`NdiSdkConfigurationError::AlreadyConfigured`] if called more than once.
+pub fn configure_resource_dir(resource_dir: PathBuf) -> Result<(), NdiSdkConfigurationError> {
+    RESOURCE_DIR
+        .set(resource_dir)
+        .map_err(|_| NdiSdkConfigurationError::AlreadyConfigured)
+}
 
 /// Process-lifetime owner for the dynamically loaded NDI SDK.
 ///
@@ -77,7 +98,23 @@ impl NdiSdk {
 }
 
 fn resolve_library_path() -> Result<PathBuf, NdiSdkError> {
-    let candidates: &[&str] = if cfg!(target_os = "macos") {
+    let development_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let candidates =
+        library_candidates(RESOURCE_DIR.get().map(PathBuf::as_path), &development_root);
+    let attempted_paths = candidates
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    candidates
+        .into_iter()
+        .find(|candidate| candidate.exists())
+        .ok_or(NdiSdkError::LibraryNotFound(attempted_paths))
+}
+
+fn platform_library_paths() -> &'static [&'static str] {
+    if cfg!(target_os = "macos") {
         &["sdk/ndi/macos/libndi.dylib"]
     } else if cfg!(target_os = "windows") {
         &["sdk/ndi/windows/Processing.NDI.Lib.x64.dll"]
@@ -87,11 +124,71 @@ fn resolve_library_path() -> Result<PathBuf, NdiSdkError> {
             "sdk/ndi/linux/x86_64/libndi.so.6",
             "sdk/ndi/linux/libndi.so.6",
         ]
-    };
-    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    }
+}
+
+fn library_candidates(resource_dir: Option<&Path>, development_root: &Path) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+
+    if let Some(root) = resource_dir {
+        #[cfg(target_os = "macos")]
+        if let Some(contents_dir) = root.parent() {
+            candidates.push(contents_dir.join("Frameworks/libndi.dylib"));
+        }
+
+        candidates.extend(
+            platform_library_paths()
+                .iter()
+                .map(|relative_path| root.join(relative_path)),
+        );
+    }
+
+    candidates.extend(
+        platform_library_paths()
+            .iter()
+            .map(|relative_path| development_root.join(relative_path)),
+    );
     candidates
-        .iter()
-        .map(|candidate| base.join(candidate))
-        .find(|candidate| candidate.exists())
-        .ok_or_else(|| NdiSdkError::LibraryNotFound(candidates.join(", ")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{library_candidates, platform_library_paths};
+    use std::path::Path;
+
+    #[test]
+    fn packaged_resource_candidate_should_precede_development_fallback() {
+        let resource_dir = Path::new("/installed/resources");
+        let development_root = Path::new("/workspace");
+        let candidates = library_candidates(Some(resource_dir), development_root);
+        let packaged_offset = usize::from(cfg!(target_os = "macos"));
+
+        #[cfg(target_os = "macos")]
+        assert_eq!(
+            candidates[0],
+            Path::new("/installed/Frameworks/libndi.dylib")
+        );
+
+        for (index, relative_path) in platform_library_paths().iter().enumerate() {
+            assert_eq!(
+                candidates[packaged_offset + index],
+                resource_dir.join(relative_path)
+            );
+            assert_eq!(
+                candidates[packaged_offset + platform_library_paths().len() + index],
+                development_root.join(relative_path)
+            );
+        }
+    }
+
+    #[test]
+    fn development_candidate_should_remain_available_without_resource_directory() {
+        let development_root = Path::new("/workspace");
+        let candidates = library_candidates(None, development_root);
+
+        assert_eq!(
+            candidates[0],
+            development_root.join(Path::new(platform_library_paths()[0]))
+        );
+    }
 }
