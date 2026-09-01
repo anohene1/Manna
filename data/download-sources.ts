@@ -48,6 +48,21 @@ async function main() {
     await downloadFile(`${BASE_URL}/${t.file}`, dest)
   }
 
+  const twiDest = join(SOURCES_DIR, "NA-TWI.json")
+  if (await Bun.file(twiDest).exists()) {
+    console.log("  ⏭ NA-TWI.json already exists, skipping")
+  } else {
+    const proc = Bun.spawn(
+      ["bun", "run", join(DATA_DIR, "convert-twi-xml.ts")],
+      {
+        stdout: "inherit",
+        stderr: "inherit",
+      }
+    )
+    if ((await proc.exited) !== 0)
+      throw new Error("Failed to convert Asante Twi Bible")
+  }
+
   // Download cross-references
   console.log("\n🔗 Downloading cross-references...\n")
   const crossRefFile = join(CROSS_REFS_DIR, "cross_references.txt")

@@ -1,13 +1,12 @@
 use std::ffi::{c_void, CString};
-use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use libloading::{Library, Symbol};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::ndi_sdk::{NdiSdk, NdiSdkError};
+
 type NdiSendInstance = *mut c_void;
-type NdiInitializeFn = unsafe extern "C" fn() -> bool;
-type NdiDestroyFn = unsafe extern "C" fn();
 type NdiSendCreateFn = unsafe extern "C" fn(*const NdiSendCreate) -> NdiSendInstance;
 type NdiSendDestroyFn = unsafe extern "C" fn(NdiSendInstance);
 type NdiSendVideoV2Fn = unsafe extern "C" fn(NdiSendInstance, *const NdiVideoFrameV2);
@@ -121,7 +120,9 @@ pub enum NdiError {
     SenderCreateFailed,
     #[error("NDI session is not active")]
     SessionNotActive,
-    #[error("frame dimensions do not match active NDI settings ({expected_width}x{expected_height})")]
+    #[error(
+        "frame dimensions do not match active NDI settings ({expected_width}x{expected_height})"
+    )]
     FrameDimensionsMismatch {
         expected_width: u32,
         expected_height: u32,
@@ -165,12 +166,17 @@ impl NdiRuntime {
             drop(existing);
         }
 
-        log::info!("NDI[{session_id}]: starting session '{}'", request.source_name);
+        log::info!(
+            "NDI[{session_id}]: starting session '{}'",
+            request.source_name
+        );
         let session = ActiveNdiSession::create(request)?;
         let info = session.info.clone();
         log::info!(
             "NDI[{session_id}]: session active — {}x{} @ {}fps",
-            info.width, info.height, info.fps
+            info.width,
+            info.height,
+            info.fps
         );
         self.sessions.insert(session_id, session);
         Ok(info)
@@ -209,12 +215,11 @@ impl NdiRuntime {
 }
 
 struct ActiveNdiSession {
-    _library: Library,
+    _sdk: Arc<NdiSdk>,
     _sender_name: CString,
     sender: NdiSendInstance,
     send_destroy: NdiSendDestroyFn,
     send_video: NdiSendVideoV2Fn,
-    ndi_destroy: NdiDestroyFn,
     info: NdiSessionInfo,
     frame_count: u64,
     frame_buffer: Vec<u8>,
@@ -230,29 +235,26 @@ unsafe impl Send for NdiRuntime {}
 unsafe impl Sync for NdiRuntime {}
 
 impl ActiveNdiSession {
-    #[expect(clippy::needless_pass_by_value, reason = "request fields are destructured and moved into the session")]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "request fields are destructured and moved into the session"
+    )]
     fn create(request: NdiStartRequest) -> Result<Self, NdiError> {
         let source_name = request.source_name.trim().to_string();
         if source_name.is_empty() {
             return Err(NdiError::EmptySourceName);
         }
 
-        let library_path = resolve_library_path()?;
-        // SAFETY: library_path was validated to exist by resolve_library_path()
-        let library = unsafe { Library::new(&library_path) }
-            .map_err(|e| NdiError::LibraryLoad(e.to_string()))?;
-
-        let initialize_fn = *load_symbol::<NdiInitializeFn>(&library, b"NDIlib_initialize\0", "NDIlib_initialize")?;
-        let ndi_destroy_fn = *load_symbol::<NdiDestroyFn>(&library, b"NDIlib_destroy\0", "NDIlib_destroy")?;
-        let send_create_fn = *load_symbol::<NdiSendCreateFn>(&library, b"NDIlib_send_create\0", "NDIlib_send_create")?;
-        let send_destroy_fn = *load_symbol::<NdiSendDestroyFn>(&library, b"NDIlib_send_destroy\0", "NDIlib_send_destroy")?;
-        let send_video_fn =
-            *load_symbol::<NdiSendVideoV2Fn>(&library, b"NDIlib_send_send_video_v2\0", "NDIlib_send_send_video_v2")?;
-
-        // SAFETY: initialize_fn is a valid function pointer loaded from the NDI library
-        if !unsafe { initialize_fn() } {
-            return Err(NdiError::InitializeFailed);
-        }
+        let sdk = NdiSdk::global().map_err(map_sdk_error)?;
+        let send_create_fn = sdk
+            .symbol::<NdiSendCreateFn>(b"NDIlib_send_create\0", "NDIlib_send_create")
+            .map_err(map_sdk_error)?;
+        let send_destroy_fn = sdk
+            .symbol::<NdiSendDestroyFn>(b"NDIlib_send_destroy\0", "NDIlib_send_destroy")
+            .map_err(map_sdk_error)?;
+        let send_video_fn = sdk
+            .symbol::<NdiSendVideoV2Fn>(b"NDIlib_send_send_video_v2\0", "NDIlib_send_send_video_v2")
+            .map_err(map_sdk_error)?;
 
         let name = CString::new(source_name.clone()).map_err(|_| NdiError::EmptySourceName)?;
         let create = NdiSendCreate {
@@ -268,8 +270,6 @@ impl ActiveNdiSession {
         let create_ptr = std::ptr::from_ref(&create);
         let sender = unsafe { send_create_fn(create_ptr) };
         if sender.is_null() {
-            // SAFETY: NDI was initialized successfully above, so ndi_destroy is safe to call
-            unsafe { ndi_destroy_fn() };
             return Err(NdiError::SenderCreateFailed);
         }
 
@@ -277,12 +277,11 @@ impl ActiveNdiSession {
         let fps = request.frame_rate.fps();
 
         Ok(Self {
-            _library: library,
+            _sdk: sdk,
             _sender_name: name,
             sender,
             send_destroy: send_destroy_fn,
             send_video: send_video_fn,
-            ndi_destroy: ndi_destroy_fn,
             info: NdiSessionInfo {
                 source_name,
                 resolution: request.resolution,
@@ -320,6 +319,10 @@ impl ActiveNdiSession {
         }
 
         // Convert RGBA -> BGRA for NDIlib_FourCC_type_BGRA.
+        #[allow(
+            clippy::chunks_exact_to_as_chunks,
+            reason = "slice::as_chunks is newer than the crate's Rust 1.85 MSRV"
+        )]
         for (idx, px) in rgba_data.chunks_exact(4).enumerate() {
             let offset = idx * 4;
             self.frame_buffer[offset] = px[2];
@@ -347,7 +350,7 @@ impl ActiveNdiSession {
             frame_rate_d: 1000,
             picture_aspect_ratio: (width as f32) / (height as f32),
             frame_format_type: 1, // NDIlib_frame_format_type_progressive
-            timecode: i64::MAX, // NDIlib_send_timecode_synthesize
+            timecode: i64::MAX,   // NDIlib_send_timecode_synthesize
             p_data: self.frame_buffer.as_mut_ptr(),
             line_stride_in_bytes: (width * 4) as i32,
             p_metadata: std::ptr::null(),
@@ -363,7 +366,10 @@ impl ActiveNdiSession {
         }
         self.frame_count += 1;
         if self.frame_count == 1 {
-            log::info!("NDI: first frame sent ({width}x{height}, {} bytes)", self.frame_buffer.len());
+            log::info!(
+                "NDI: first frame sent ({width}x{height}, {} bytes)",
+                self.frame_buffer.len()
+            );
         } else if self.frame_count.is_multiple_of(300) {
             log::info!("NDI: {} frames sent", self.frame_count);
         }
@@ -374,51 +380,23 @@ impl ActiveNdiSession {
 impl Drop for ActiveNdiSession {
     fn drop(&mut self) {
         // SAFETY: sender was created by NDIlib_send_create and is non-null (validated in create()).
-        // send_destroy and ndi_destroy are valid function pointers loaded from the NDI library.
-        // The library (_library field) is kept alive by this struct and will be dropped after this.
+        // send_destroy is a valid function pointer loaded from the NDI library.
+        // NDIlib_destroy is deliberately process-lifetime: input and output
+        // sessions can coexist, and destroying the global SDK from either
+        // individual session would invalidate the other session's handles.
+        // The shared SDK owner remains alive for the process lifetime.
         let sender = self.sender;
         unsafe {
             (self.send_destroy)(sender);
-            (self.ndi_destroy)();
         }
     }
 }
 
-fn resolve_library_path() -> Result<PathBuf, NdiError> {
-    let candidates: Vec<&str> = if cfg!(target_os = "macos") {
-        vec!["sdk/ndi/macos/libndi.dylib"]
-    } else if cfg!(target_os = "windows") {
-        vec!["sdk/ndi/windows/Processing.NDI.Lib.x64.dll"]
-    } else {
-        vec![
-            "sdk/ndi/linux/libndi.so",
-            "sdk/ndi/linux/x86_64/libndi.so.6",
-            "sdk/ndi/linux/libndi.so.6",
-        ]
-    };
-
-    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    for candidate in &candidates {
-        if candidate.is_empty() {
-            continue;
-        }
-        let absolute = base.join(candidate);
-        if absolute.exists() {
-            return Ok(absolute);
-        }
+fn map_sdk_error(error: NdiSdkError) -> NdiError {
+    match error {
+        NdiSdkError::LibraryNotFound(path) => NdiError::LibraryNotFound(path),
+        NdiSdkError::LibraryLoad(message) => NdiError::LibraryLoad(message),
+        NdiSdkError::SymbolLoad { symbol, message } => NdiError::SymbolLoad { symbol, message },
+        NdiSdkError::InitializeFailed => NdiError::InitializeFailed,
     }
-
-    Err(NdiError::LibraryNotFound(candidates.join(", ")))
-}
-
-fn load_symbol<'a, T>(
-    library: &'a Library,
-    symbol: &'static [u8],
-    name: &'static str,
-) -> Result<Symbol<'a, T>, NdiError> {
-    // SAFETY: symbol name is a null-terminated byte string matching the NDI SDK's exported symbols
-    unsafe { library.get::<T>(symbol) }.map_err(|e| NdiError::SymbolLoad {
-        symbol: name,
-        message: e.to_string(),
-    })
 }

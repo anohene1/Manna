@@ -7,14 +7,14 @@ import type { Verse } from "@/types"
 export function toVerseRenderData(
   verse: Verse,
   translation: string,
-  overrides?: { bodyText?: string; referenceOverride?: string },
+  overrides?: { bodyText?: string; referenceOverride?: string }
 ): VerseRenderData {
-  const reference =
-    overrides?.referenceOverride
-      ? overrides.referenceOverride
-      : `${verse.book_name} ${verse.chapter}:${verse.verse} (${translation})`
+  const reference = overrides?.referenceOverride
+    ? overrides.referenceOverride
+    : `${verse.book_name} ${verse.chapter}:${verse.verse} (${translation})`
   const text = overrides?.bodyText ?? verse.text
   return {
+    contentType: "scripture",
     reference,
     segments: [{ text, verseNumber: verse.verse }],
   }
@@ -22,7 +22,7 @@ export function toVerseRenderData(
 
 export function queueVerseToRenderData(
   item: Extract<QueueItem, { kind: "verse" }>,
-  translation: string,
+  translation: string
 ): VerseRenderData {
   return item.chunk
     ? toVerseRenderData(item.verse, translation, {
@@ -48,10 +48,17 @@ export function deriveLiveVerse({
 const parseRef = (ref: string) => {
   const match = ref.match(/^(.+?)\s+(\d+):(\d+)/)
   if (!match) return null
-  return { bookName: match[1], chapter: parseInt(match[2]), verse: parseInt(match[3]) }
+  return {
+    bookName: match[1],
+    chapter: parseInt(match[2]),
+    verse: parseInt(match[3]),
+  }
 }
 
-export async function retranslateBroadcastVerses(translationId: number, abbreviation: string) {
+export async function retranslateBroadcastVerses(
+  translationId: number,
+  abbreviation: string
+) {
   let books = useBibleStore.getState().books
   if (books.length === 0) {
     try {
@@ -63,24 +70,31 @@ export async function retranslateBroadcastVerses(translationId: number, abbrevia
   }
   const broadcast = useBroadcastStore.getState()
 
-  const refetch = async (current: VerseRenderData | null): Promise<VerseRenderData | null> => {
+  const refetch = async (
+    current: VerseRenderData | null
+  ): Promise<VerseRenderData | null> => {
     if (!current) return null
+    // Translation changes apply only to Bible content. Keep song lyrics live.
+    if (current.contentType === "song") return current
     const parsed = parseRef(current.reference)
     if (!parsed) {
-      console.warn("[retranslate] parseRef failed for reference:", current.reference)
+      console.warn(
+        "[retranslate] parseRef failed for reference:",
+        current.reference
+      )
       return null
     }
     const target = parsed.bookName.toLowerCase()
     const book =
-      books.find(b => b.name === parsed.bookName) ??
-      books.find(b => b.name.toLowerCase() === target) ??
-      books.find(b => b.abbreviation?.toLowerCase() === target)
+      books.find((b) => b.name === parsed.bookName) ??
+      books.find((b) => b.name.toLowerCase() === target) ??
+      books.find((b) => b.abbreviation?.toLowerCase() === target)
     if (!book) {
       console.warn(
         "[retranslate] book lookup failed for",
         parsed.bookName,
         "— available names:",
-        books.map(b => b.name),
+        books.map((b) => b.name)
       )
       return null
     }
@@ -119,8 +133,7 @@ export async function retranslateBroadcastVerses(translationId: number, abbrevia
 export const broadcastActions = {
   setLiveVerse: (verse: VerseRenderData | null) =>
     useBroadcastStore.getState().setLiveVerse(verse),
-  setLive: (live: boolean) =>
-    useBroadcastStore.getState().setLive(live),
+  setLive: (live: boolean) => useBroadcastStore.getState().setLive(live),
   getActiveTheme: () => {
     const s = useBroadcastStore.getState()
     return s.themes.find((t) => t.id === s.activeThemeId) ?? s.themes[0]

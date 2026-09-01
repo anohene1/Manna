@@ -5,13 +5,16 @@ import {
   type CalibrationInsets,
   IDENTITY_INSETS,
 } from "@/lib/projector-calibration"
+import type { VideoFit, VideoInputConfig } from "@/types"
+
+export const DEFAULT_LOWER_THIRD_THEME_ID = "builtin-lower-third-classic"
 
 type SttProvider = "deepgram" | "whisper" | "assemblyai"
 
 export interface BrandConfig {
   churchName: string | null
-  logoPath: string | null        // app/sessions logo
-  blankImagePath: string | null  // projector blank-slide image
+  logoPath: string | null // app/sessions logo
+  blankImagePath: string | null // projector blank-slide image
   momoImagePath: string | null
   jesusImagePath: string | null
 }
@@ -48,6 +51,10 @@ interface SettingsState {
   recordAudio: boolean
   projectorCalibration: CalibrationInsets
   brand: BrandConfig
+  cameraSource: VideoInputConfig | null
+  cameraFit: VideoFit
+  cameraMirrored: boolean
+  lowerThirdThemeId: string
 
   setDeepgramApiKey: (key: string | null) => void
   setAssemblyAiApiKey: (key: string | null) => void
@@ -72,6 +79,12 @@ interface SettingsState {
   setRecordAudio: (v: boolean) => void
   setProjectorCalibration: (insets: CalibrationInsets) => void
   setBrand: (brand: BrandConfig) => void
+  setCameraPreferences: (preferences: {
+    source: VideoInputConfig | null
+    fit: VideoFit
+    mirrored: boolean
+    lowerThirdThemeId: string
+  }) => void
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
@@ -98,6 +111,10 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   recordAudio: true,
   projectorCalibration: IDENTITY_INSETS,
   brand: DEFAULT_BRAND,
+  cameraSource: null,
+  cameraFit: "cover",
+  cameraMirrored: false,
+  lowerThirdThemeId: DEFAULT_LOWER_THIRD_THEME_ID,
 
   setDeepgramApiKey: (deepgramApiKey) => set({ deepgramApiKey }),
   setAssemblyAiApiKey: (assemblyAiApiKey) => set({ assemblyAiApiKey }),
@@ -120,8 +137,16 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setSttProvider: (sttProvider) => set({ sttProvider }),
   setEnabledHymnals: (enabledHymnals) => set({ enabledHymnals }),
   setRecordAudio: (recordAudio) => set({ recordAudio }),
-  setProjectorCalibration: (projectorCalibration) => set({ projectorCalibration }),
+  setProjectorCalibration: (projectorCalibration) =>
+    set({ projectorCalibration }),
   setBrand: (brand) => set({ brand }),
+  setCameraPreferences: ({ source, fit, mirrored, lowerThirdThemeId }) =>
+    set({
+      cameraSource: source,
+      cameraFit: fit,
+      cameraMirrored: mirrored,
+      lowerThirdThemeId,
+    }),
 }))
 
 // ── Shared Tauri store instance ────────────────────────────────────────
@@ -162,6 +187,10 @@ export async function hydrateSettings(): Promise<void> {
       brand,
       autoSplitLongVerses,
       splitWordThreshold,
+      cameraSource,
+      cameraFit,
+      cameraMirrored,
+      lowerThirdThemeId,
     ] = await Promise.all([
       store.get<string>("deepgramApiKey"),
       store.get<string>("assemblyAiApiKey"),
@@ -185,6 +214,10 @@ export async function hydrateSettings(): Promise<void> {
       store.get<BrandConfig>("brand"),
       store.get<boolean>("autoSplitLongVerses"),
       store.get<number>("splitWordThreshold"),
+      store.get<VideoInputConfig>("cameraSource"),
+      store.get<VideoFit>("cameraFit"),
+      store.get<boolean>("cameraMirrored"),
+      store.get<string>("lowerThirdThemeId"),
     ])
 
     const s = useSettingsStore.getState()
@@ -202,12 +235,14 @@ export async function hydrateSettings(): Promise<void> {
     if (gain != null) s.setGain(gain)
     if (audioDeviceId) s.setAudioDeviceId(audioDeviceId)
     if (autoMode != null) s.setAutoMode(autoMode)
-    if (confidenceThreshold != null) s.setConfidenceThreshold(confidenceThreshold)
+    if (confidenceThreshold != null)
+      s.setConfidenceThreshold(confidenceThreshold)
     if (cooldownMs != null) s.setCooldownMs(cooldownMs)
     if (Array.isArray(enabledHymnals) && enabledHymnals.length > 0) {
       s.setEnabledHymnals(enabledHymnals)
     }
-    if (typeof recordAudio === "boolean") useSettingsStore.setState({ recordAudio })
+    if (typeof recordAudio === "boolean")
+      useSettingsStore.setState({ recordAudio })
     if (
       projectorCalibration &&
       typeof projectorCalibration === "object" &&
@@ -217,20 +252,79 @@ export async function hydrateSettings(): Promise<void> {
     }
     if (brand && typeof brand === "object") {
       s.setBrand({
-        churchName: typeof brand.churchName === "string" ? brand.churchName : null,
+        churchName:
+          typeof brand.churchName === "string" ? brand.churchName : null,
         logoPath: typeof brand.logoPath === "string" ? brand.logoPath : null,
-        blankImagePath: typeof brand.blankImagePath === "string" ? brand.blankImagePath : null,
-        momoImagePath: typeof brand.momoImagePath === "string" ? brand.momoImagePath : null,
-        jesusImagePath: typeof brand.jesusImagePath === "string" ? brand.jesusImagePath : null,
+        blankImagePath:
+          typeof brand.blankImagePath === "string"
+            ? brand.blankImagePath
+            : null,
+        momoImagePath:
+          typeof brand.momoImagePath === "string" ? brand.momoImagePath : null,
+        jesusImagePath:
+          typeof brand.jesusImagePath === "string"
+            ? brand.jesusImagePath
+            : null,
       })
     }
-    if (autoSplitLongVerses != null) s.setAutoSplitLongVerses(autoSplitLongVerses)
+    if (autoSplitLongVerses != null)
+      s.setAutoSplitLongVerses(autoSplitLongVerses)
     if (splitWordThreshold != null) {
-      const clamped = Math.max(20, Math.min(200, Math.round(splitWordThreshold)))
+      const clamped = Math.max(
+        20,
+        Math.min(200, Math.round(splitWordThreshold))
+      )
       s.setSplitWordThreshold(clamped)
     }
+    s.setCameraPreferences({
+      source: isVideoInputConfig(cameraSource) ? cameraSource : null,
+      fit: cameraFit === "contain" ? "contain" : "cover",
+      mirrored: cameraMirrored === true,
+      lowerThirdThemeId:
+        typeof lowerThirdThemeId === "string" && lowerThirdThemeId.length > 0
+          ? lowerThirdThemeId
+          : DEFAULT_LOWER_THIRD_THEME_ID,
+    })
   } catch {
     console.warn("[settings] Failed to load persisted settings, using defaults")
+  }
+}
+
+function isVideoInputConfig(value: unknown): value is VideoInputConfig {
+  if (!value || typeof value !== "object") return false
+  const candidate = value as Partial<VideoInputConfig>
+  if (candidate.type === "local") {
+    return (
+      typeof candidate.deviceId === "string" &&
+      typeof candidate.label === "string"
+    )
+  }
+  return (
+    candidate.type === "ndi" &&
+    typeof candidate.sourceName === "string" &&
+    (candidate.urlAddress === null || typeof candidate.urlAddress === "string")
+  )
+}
+
+export async function persistCameraPreferences(preferences: {
+  source: VideoInputConfig | null
+  fit: VideoFit
+  mirrored: boolean
+  lowerThirdThemeId: string
+}): Promise<void> {
+  useSettingsStore.getState().setCameraPreferences(preferences)
+  try {
+    const store = await getStore()
+    await Promise.all([
+      preferences.source
+        ? store.set("cameraSource", preferences.source)
+        : store.delete("cameraSource"),
+      store.set("cameraFit", preferences.fit),
+      store.set("cameraMirrored", preferences.mirrored),
+      store.set("lowerThirdThemeId", preferences.lowerThirdThemeId),
+    ])
+  } catch {
+    console.warn("[settings] Failed to persist camera preferences")
   }
 }
 
@@ -261,7 +355,9 @@ export function persistGain(gain: number): void {
 }
 
 /** Persist audio device ID to disk. */
-export async function persistAudioDeviceId(deviceId: string | null): Promise<void> {
+export async function persistAudioDeviceId(
+  deviceId: string | null
+): Promise<void> {
   useSettingsStore.getState().setAudioDeviceId(deviceId)
   try {
     const store = await getStore()
@@ -291,7 +387,9 @@ export async function persistDeepgramApiKey(key: string | null): Promise<void> {
 }
 
 /** Persist the AssemblyAI API key to disk. */
-export async function persistAssemblyAiApiKey(key: string | null): Promise<void> {
+export async function persistAssemblyAiApiKey(
+  key: string | null
+): Promise<void> {
   useSettingsStore.getState().setAssemblyAiApiKey(key)
   try {
     const store = await getStore()
@@ -387,7 +485,9 @@ export async function persistBraveApiKey(key: string | null): Promise<void> {
 }
 
 /** Persist local image folder path to disk. */
-export async function persistLocalImageFolder(path: string | null): Promise<void> {
+export async function persistLocalImageFolder(
+  path: string | null
+): Promise<void> {
   useSettingsStore.getState().setLocalImageFolder(path)
   try {
     const store = await getStore()
@@ -421,7 +521,9 @@ export async function persistAutoMode(autoMode: boolean): Promise<void> {
 }
 
 /** Persist confidence threshold to disk. */
-export async function persistConfidenceThreshold(threshold: number): Promise<void> {
+export async function persistConfidenceThreshold(
+  threshold: number
+): Promise<void> {
   useSettingsStore.getState().setConfidenceThreshold(threshold)
   try {
     const store = await getStore()
@@ -491,7 +593,7 @@ export async function persistRecordAudio(value: boolean): Promise<void> {
  *  output updates live. `editing` drives the on-projector calibration overlay. */
 export async function persistProjectorCalibration(
   insets: CalibrationInsets,
-  editing: boolean,
+  editing: boolean
 ): Promise<void> {
   useSettingsStore.getState().setProjectorCalibration(insets)
   void emit("projector:calibration", { insets, editing }).catch(() => {})
@@ -505,7 +607,9 @@ export async function persistProjectorCalibration(
 }
 
 /** Persist a brand-config patch (merged over current) to disk. */
-export async function persistBrandConfig(patch: Partial<BrandConfig>): Promise<void> {
+export async function persistBrandConfig(
+  patch: Partial<BrandConfig>
+): Promise<void> {
   const next = { ...useSettingsStore.getState().brand, ...patch }
   useSettingsStore.getState().setBrand(next)
   try {

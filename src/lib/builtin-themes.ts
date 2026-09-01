@@ -1,7 +1,19 @@
 import type { BroadcastTheme } from "@/types/broadcast"
+import { HTML_LOWER_THIRD_PRESETS } from "@/lib/html-lower-third-presets"
 
-const baseTheme: Omit<BroadcastTheme, "id" | "name" | "background" | "verseText" | "reference" | "layout" | "transition" | "textBox"> = {
+const baseTheme: Omit<
+  BroadcastTheme,
+  | "id"
+  | "name"
+  | "background"
+  | "verseText"
+  | "reference"
+  | "layout"
+  | "transition"
+  | "textBox"
+> = {
   builtin: true,
+  kind: "slide",
   pinned: false,
   createdAt: 0,
   updatedAt: 0,
@@ -173,8 +185,9 @@ const MODERN_LIGHT: BroadcastTheme = {
 
 const BROADCAST_OVERLAY: BroadcastTheme = {
   ...baseTheme,
-  id: "builtin-broadcast-overlay",
-  name: "Broadcast Overlay",
+  id: "builtin-lower-third-classic",
+  name: "Classic Dark Lower Third",
+  kind: "lower-third",
   background: {
     type: "transparent",
     color: "transparent",
@@ -234,6 +247,13 @@ const BROADCAST_OVERLAY: BroadcastTheme = {
     textAreaHeight: 40,
     referenceGap: 24,
   },
+  logo: {
+    url: "/ag-bebu.png",
+    position: "top-left",
+    size: 120,
+    opacity: 1,
+    margin: 48,
+  },
   transition: {
     type: "fade",
     duration: 300,
@@ -241,6 +261,132 @@ const BROADCAST_OVERLAY: BroadcastTheme = {
     direction: "up",
   },
 }
+
+const MINIMAL_LOWER_THIRD: BroadcastTheme = {
+  ...BROADCAST_OVERLAY,
+  id: "builtin-lower-third-minimal",
+  name: "Minimal Gradient Lower Third",
+  textBox: {
+    enabled: true,
+    color: "#101418",
+    gradient: {
+      type: "linear",
+      angle: 8,
+      stops: [
+        { color: "#13233b", position: 0 },
+        { color: "#145044", position: 58 },
+        { color: "#17253d", position: 100 },
+      ],
+    },
+    opacity: 0.94,
+    borderRadius: 4,
+    padding: 28,
+  },
+  verseText: {
+    ...BROADCAST_OVERLAY.verseText,
+    fontFamily: "Inter Variable",
+    fontSize: 58,
+    fontWeight: 500,
+    horizontalAlign: "left",
+    lineHeight: 1.35,
+    autoFit: true,
+    minFontSize: 36,
+    shadow: null,
+  },
+  reference: {
+    ...BROADCAST_OVERLAY.reference,
+    fontFamily: "Inter Variable",
+    fontSize: 32,
+    fontWeight: 650,
+    color: "#d6e2ea",
+    horizontalAlign: "left",
+    position: "above",
+    letterSpacing: 1.5,
+  },
+  verseNumbers: {
+    ...BROADCAST_OVERLAY.verseNumbers,
+    visible: false,
+  },
+  layout: {
+    ...BROADCAST_OVERLAY.layout,
+    anchor: "bottom-left",
+    offsetX: 54,
+    offsetY: -54,
+    textAlign: "left",
+    backgroundWidth: 76,
+    backgroundHeight: 34,
+    textAreaWidth: 70,
+    textAreaHeight: 27,
+    padding: { top: 28, right: 40, bottom: 28, left: 40 },
+    referenceGap: 18,
+  },
+}
+
+const BOLD_ACCENT_LOWER_THIRD: BroadcastTheme = {
+  ...BROADCAST_OVERLAY,
+  id: "builtin-lower-third-bold-accent",
+  name: "Bold Accent Lower Third",
+  textBox: {
+    enabled: true,
+    color: "#09090b",
+    opacity: 0.9,
+    borderRadius: 0,
+    padding: 32,
+  },
+  verseText: {
+    ...BROADCAST_OVERLAY.verseText,
+    fontFamily: "Geist Variable",
+    fontSize: 62,
+    fontWeight: 700,
+    horizontalAlign: "left",
+    lineHeight: 1.25,
+    autoFit: true,
+    minFontSize: 38,
+  },
+  reference: {
+    ...BROADCAST_OVERLAY.reference,
+    fontSize: 34,
+    fontWeight: 750,
+    color: "#fbbf24",
+    horizontalAlign: "left",
+    textTransform: "uppercase",
+    uppercase: true,
+    position: "above",
+    letterSpacing: 3,
+  },
+  verseNumbers: {
+    ...BROADCAST_OVERLAY.verseNumbers,
+    visible: false,
+  },
+  divider: {
+    ...BROADCAST_OVERLAY.divider,
+    style: "line",
+    color: "#fbbf24",
+    width: 90,
+    opacity: 1,
+  },
+  layout: {
+    ...BROADCAST_OVERLAY.layout,
+    anchor: "bottom-center",
+    offsetY: -46,
+    textAlign: "left",
+    backgroundWidth: 90,
+    backgroundHeight: 38,
+    textAreaWidth: 84,
+    textAreaHeight: 30,
+    padding: { top: 30, right: 48, bottom: 30, left: 48 },
+    referenceGap: 18,
+  },
+}
+
+const HTML_LOWER_THIRDS: BroadcastTheme[] = HTML_LOWER_THIRD_PRESETS.map(
+  (preset) => ({
+    ...BROADCAST_OVERLAY,
+    id: preset.id,
+    name: preset.name,
+    htmlTemplate: { source: preset.source },
+  })
+)
 
 const WARM_WORSHIP: BroadcastTheme = {
   ...baseTheme,
@@ -629,7 +775,7 @@ const BOLD_PROCLAMATION: BroadcastTheme = {
     referenceGap: 56,
   },
   logo: {
-    url: "/EWC-White.png",
+    url: "/ag-bebu.png",
     position: "top-left",
     size: 120,
     opacity: 1,
@@ -751,7 +897,7 @@ const BOLD_CHAPEL: BroadcastTheme = {
   },
   logo: {
     ...BOLD_PROCLAMATION.logo!,
-    url: "/manna-logo.png",
+    url: "/ag-logo.png",
     opacity: 0.9,
   },
 }
@@ -761,4 +907,12 @@ export const BUILTIN_THEMES: BroadcastTheme[] = [
   BOLD_CRIMSON,
   BOLD_COBALT,
   BOLD_CHAPEL,
+  BROADCAST_OVERLAY,
+  MINIMAL_LOWER_THIRD,
+  BOLD_ACCENT_LOWER_THIRD,
+  ...HTML_LOWER_THIRDS,
 ]
+
+export const LOWER_THIRD_THEMES = BUILTIN_THEMES.filter(
+  (theme) => theme.kind === "lower-third"
+)

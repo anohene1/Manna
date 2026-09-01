@@ -11,3 +11,5 @@
 //! - [`ndi::NdiError`] — error type for NDI operations
 
 pub mod ndi;
+pub mod ndi_input;
+mod ndi_sdk;

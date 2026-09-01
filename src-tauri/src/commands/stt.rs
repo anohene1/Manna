@@ -1,4 +1,7 @@
-#![expect(clippy::needless_pass_by_value, reason = "Tauri command extractors require pass-by-value")]
+#![expect(
+    clippy::needless_pass_by_value,
+    reason = "Tauri command extractors require pass-by-value"
+)]
 
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
@@ -21,8 +24,14 @@ use rhema_stt::{DeepgramClient, SttConfig, SttProvider, TranscriptEvent};
 /// 3. Fans audio out to both the level meter (emits `audio_level` events) and STT.
 /// 4. Receives transcripts and emits `transcript_partial` / `transcript_final` events.
 /// 5. On final transcripts, runs the detection pipeline and emits `verse_detected` events.
-#[expect(clippy::too_many_lines, reason = "pipeline setup is inherently complex")]
-#[expect(clippy::too_many_arguments, reason = "Tauri command surface intentionally exposes all start options")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "pipeline setup is inherently complex"
+)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Tauri command surface intentionally exposes all start options"
+)]
 #[tauri::command]
 pub async fn start_transcription(
     app: AppHandle,
@@ -39,14 +48,25 @@ pub async fn start_transcription(
     // after a perceived disconnect (e.g. Deepgram silence-close) while the
     // backend is still happily reconnecting — rejecting with an error strands
     // the user. A no-op start keeps UI and backend in sync.
-    let (stt_active, audio_active) = {
+    let (stt_active, audio_active, transcription_language) = {
         let app_state = state.lock().map_err(|e| e.to_string())?;
         if app_state.stt_active.load(Ordering::Relaxed) {
             log::info!("start_transcription called but already running — no-op");
             let _ = app.emit("stt_connected", ());
             return Ok(());
         }
-        (app_state.stt_active.clone(), app_state.audio_active.clone())
+        let language = app_state.bible_db.as_ref().and_then(|db| {
+            db.list_translations()
+                .ok()?
+                .into_iter()
+                .find(|translation| translation.id == app_state.active_translation_id)
+                .map(|translation| translation.language)
+        });
+        (
+            app_state.stt_active.clone(),
+            app_state.audio_active.clone(),
+            language,
+        )
     };
 
     let provider_name = provider.as_deref().unwrap_or("deepgram");
@@ -60,33 +80,23 @@ pub async fn start_transcription(
             // Prod: resource_dir()/models/whisper/ggml-large-v3-turbo-q8_0.bin
             let model_filename = "ggml-large-v3-turbo-q8_0.bin";
             let model_path = {
-                let base_dir =
-                    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-                let dev_path = base_dir
-                    .join("models")
-                    .join("whisper")
-                    .join(model_filename);
+                let base_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+                let dev_path = base_dir.join("models").join("whisper").join(model_filename);
                 if dev_path.exists() {
                     dev_path
                 } else {
                     app.path()
                         .resource_dir()
-                        .map(|p| {
-                            p.join("models")
-                                .join("whisper")
-                                .join(model_filename)
-                        })
+                        .map(|p| p.join("models").join("whisper").join(model_filename))
                         .ok()
                         .filter(|p| p.exists())
                         .ok_or_else(|| {
-                            "Whisper model not found. Run: bun run download:whisper"
-                                .to_string()
+                            "Whisper model not found. Run: bun run download:whisper".to_string()
                         })?
                 }
             };
 
-            let parallelism = std::thread::available_parallelism()
-                .map_or(4, usize::from);
+            let parallelism = std::thread::available_parallelism().map_or(4, usize::from);
             let n_threads = i32::try_from(parallelism / 2).unwrap_or(2).max(1);
 
             log::info!(
@@ -96,15 +106,13 @@ pub async fn start_transcription(
 
             Arc::new(rhema_stt::WhisperProvider::new(
                 model_path,
-                None,
+                transcription_language.clone(),
                 n_threads,
             ))
         }
         #[cfg(not(feature = "whisper"))]
         "whisper" => {
-            return Err(
-                "Whisper support not compiled. Rebuild with --features whisper".into(),
-            );
+            return Err("Whisper support not compiled. Rebuild with --features whisper".into());
         }
         "assemblyai" => {
             let resolved_api_key = if api_key.is_empty() {
@@ -207,7 +215,10 @@ pub async fn start_transcription(
                 .join(sid.to_string());
             match std::fs::create_dir_all(&dir) {
                 Ok(()) => session_dir = Some(dir),
-                Err(e) => log::warn!("[REC] could not create {}: {e}; skipping recording", dir.display()),
+                Err(e) => log::warn!(
+                    "[REC] could not create {}: {e}; skipping recording",
+                    dir.display()
+                ),
             }
         } else {
             log::info!("[REC] recording requested but no session_id; skipping");
@@ -279,7 +290,8 @@ pub async fn start_transcription(
                 }
             };
 
-            let mut mp3: Option<rhema_audio::Mp3Writer> = if recording_paused.load(Ordering::SeqCst) {
+            let mut mp3: Option<rhema_audio::Mp3Writer> = if recording_paused.load(Ordering::SeqCst)
+            {
                 None
             } else {
                 let w = open_segment();
@@ -370,7 +382,7 @@ pub async fn start_transcription(
                         // (b) Forward all audio to STT provider
                         let _ = audio_send_tx.try_send(frame.samples);
                     }
-                    Err(crossbeam_channel::RecvTimeoutError::Timeout) => {},
+                    Err(crossbeam_channel::RecvTimeoutError::Timeout) => {}
                     Err(crossbeam_channel::RecvTimeoutError::Disconnected) => break,
                 }
             }
@@ -489,7 +501,8 @@ pub async fn start_transcription(
                         let direct_found = run_direct_detection(&event_app, &transcript);
 
                         // Reading mode: check if transcript matches expected verse
-                        let reading_handled = check_reading_mode(&event_app, &transcript, direct_found);
+                        let reading_handled =
+                            check_reading_mode(&event_app, &transcript, direct_found);
 
                         // Quotation matching: run on every is_final (fast, no ONNX)
                         if !direct_found && !reading_handled {
@@ -556,9 +569,12 @@ pub async fn start_transcription(
 /// Uses SEPARATE Mutex<DirectDetector> and Mutex<DetectionMerger> so it
 /// never blocks on the semantic worker, and cooldown state persists across calls.
 /// Returns true if high-confidence results were found (>= 0.90).
-#[expect(clippy::similar_names, reason = "merger and merged are naturally named")]
+#[expect(
+    clippy::similar_names,
+    reason = "merger and merged are naturally named"
+)]
 fn run_direct_detection(app: &AppHandle, transcript: &str) -> bool {
-    use rhema_detection::{DirectDetector, DetectionMerger};
+    use rhema_detection::{DetectionMerger, DirectDetector};
 
     let detector_state: State<'_, Mutex<DirectDetector>> = app.state();
     let mut detector = match detector_state.lock() {
@@ -617,7 +633,11 @@ fn run_direct_detection(app: &AppHandle, transcript: &str) -> bool {
             })
             .collect();
         for r in &results {
-            log::info!("[DET-DIRECT] Found: {} ({:.0}%) (no DB)", r.verse_ref, r.confidence * 100.0);
+            log::info!(
+                "[DET-DIRECT] Found: {} ({:.0}%) (no DB)",
+                r.verse_ref,
+                r.confidence * 100.0
+            );
         }
         let _ = app.emit("verse_detections", &results);
         return has_high_confidence;
@@ -635,12 +655,18 @@ fn run_direct_detection(app: &AppHandle, transcript: &str) -> bool {
         let vr = &m.detection.verse_ref;
         let ref_str = format!("{} {}:{}", vr.book_name, vr.chapter, vr.verse_start);
         if results.iter().any(|r| r.verse_ref == ref_str) {
-            app_state.sermon_context.update(vr, m.detection.confidence, "direct");
+            app_state
+                .sermon_context
+                .update(vr, m.detection.confidence, "direct");
         }
     }
 
     for r in &results {
-        log::info!("[DET-DIRECT] Found: {} ({:.0}%)", r.verse_ref, r.confidence * 100.0);
+        log::info!(
+            "[DET-DIRECT] Found: {} ({:.0}%)",
+            r.verse_ref,
+            r.confidence * 100.0
+        );
     }
     drop(app_state);
     if !results.is_empty() {
@@ -735,7 +761,9 @@ fn run_semantic_detection(app: &AppHandle, transcript: &str) {
     for r in &results {
         log::info!(
             "[DET-SEMANTIC] Emitting: {} ({:.0}% {})",
-            r.verse_ref, r.confidence * 100.0, r.source
+            r.verse_ref,
+            r.confidence * 100.0,
+            r.source
         );
     }
     if results.is_empty() {
@@ -752,7 +780,10 @@ fn run_semantic_detection(app: &AppHandle, transcript: &str) {
 /// Check reading mode: if active, test transcript against expected verse.
 /// If direct detection just found a new verse, start/restart reading mode.
 /// Returns `true` when reading mode handled the transcript (suppresses semantic).
-#[expect(clippy::too_many_lines, reason = "sequential state-machine logic is clearer in one flow")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "sequential state-machine logic is clearer in one flow"
+)]
 fn check_reading_mode(app: &AppHandle, transcript: &str, direct_found: bool) -> bool {
     use rhema_detection::ReadingMode;
 
@@ -763,7 +794,9 @@ fn check_reading_mode(app: &AppHandle, transcript: &str, direct_found: bool) -> 
     if direct_found {
         let verse_info = {
             let detector_state: State<'_, Mutex<rhema_detection::DirectDetector>> = app.state();
-            let Ok(detector) = detector_state.lock() else { return false };
+            let Ok(detector) = detector_state.lock() else {
+                return false;
+            };
             detector.recent_detections().front().cloned()
         };
 
@@ -771,7 +804,9 @@ fn check_reading_mode(app: &AppHandle, transcript: &str, direct_found: bool) -> 
             // Get the confidence of the detection to distinguish explicit refs from false positives
             let detection_confidence = {
                 let detector_state: State<'_, Mutex<rhema_detection::DirectDetector>> = app.state();
-                detector_state.lock().ok()
+                detector_state
+                    .lock()
+                    .ok()
                     .and_then(|d| d.recent_detections().front().map(|_| 0.95)) // Direct detections are always high confidence
                     .unwrap_or(0.0)
             };
@@ -786,10 +821,12 @@ fn check_reading_mode(app: &AppHandle, transcript: &str, direct_found: bool) -> 
                             // Paused — restart on any new explicit reference
                             true
                         } else if rm.current_book() == recent.book_number
-                            && rm.current_chapter() == recent.chapter {
+                            && rm.current_chapter() == recent.chapter
+                        {
                             false // Same book+chapter — already tracking this
                         } else if rm.current_book() != recent.book_number
-                            && detection_confidence >= 0.90 {
+                            && detection_confidence >= 0.90
+                        {
                             // Different book with high confidence — explicit new reference
                             // (e.g., "John 1:1" after reading Exodus). Restart.
                             true
@@ -808,9 +845,17 @@ fn check_reading_mode(app: &AppHandle, transcript: &str, direct_found: bool) -> 
             if should_start {
                 let chapter_data = {
                     let app_managed: State<'_, Mutex<crate::state::AppState>> = app.state();
-                    let Ok(app_state) = app_managed.try_lock() else { return false };
+                    let Ok(app_state) = app_managed.try_lock() else {
+                        return false;
+                    };
                     match &app_state.bible_db {
-                        Some(db) => db.get_chapter(app_state.active_translation_id, recent.book_number, recent.chapter).ok(),
+                        Some(db) => db
+                            .get_chapter(
+                                app_state.active_translation_id,
+                                recent.book_number,
+                                recent.chapter,
+                            )
+                            .ok(),
                         None => None,
                     }
                 };
@@ -841,7 +886,9 @@ fn check_reading_mode(app: &AppHandle, transcript: &str, direct_found: bool) -> 
     // Check for chapter navigation commands (e.g., "let's go to chapter seven").
     {
         let chapter_change = {
-            let Ok(rm) = rm_managed.lock() else { return false };
+            let Ok(rm) = rm_managed.lock() else {
+                return false;
+            };
             if !rm.is_active() && !rm.has_verses() {
                 None
             } else {
@@ -852,13 +899,17 @@ fn check_reading_mode(app: &AppHandle, transcript: &str, direct_found: bool) -> 
         if let Some(change) = chapter_change {
             let chapter_data = {
                 let app_managed: State<'_, Mutex<crate::state::AppState>> = app.state();
-                let Ok(app_state) = app_managed.try_lock() else { return false };
+                let Ok(app_state) = app_managed.try_lock() else {
+                    return false;
+                };
                 match &app_state.bible_db {
-                    Some(db) => db.get_chapter(
-                        app_state.active_translation_id,
-                        change.book_number,
-                        change.new_chapter,
-                    ).ok(),
+                    Some(db) => db
+                        .get_chapter(
+                            app_state.active_translation_id,
+                            change.book_number,
+                            change.new_chapter,
+                        )
+                        .ok(),
                     None => None,
                 }
             };
@@ -918,7 +969,9 @@ fn check_reading_mode(app: &AppHandle, transcript: &str, direct_found: bool) -> 
     // Allow check even when paused (has_verses but !active) so "verse N"
     // commands can re-activate reading mode after timeout.
     let advance = {
-        let Ok(mut rm) = rm_managed.lock() else { return false };
+        let Ok(mut rm) = rm_managed.lock() else {
+            return false;
+        };
         if !rm.is_active() && !rm.has_verses() {
             return false;
         }
@@ -956,26 +1009,37 @@ fn check_translation_command(app: &AppHandle, transcript: &str) {
     }
 
     let detector_state: State<'_, Mutex<rhema_detection::DirectDetector>> = app.state();
-    let Ok(detector) = detector_state.lock() else { return };
+    let Ok(detector) = detector_state.lock() else {
+        return;
+    };
 
     if let Some(abbrev) = detector.detect_translation_command(transcript) {
         drop(detector);
 
         // Find the translation ID for this abbreviation
         let managed: State<'_, Mutex<AppState>> = app.state();
-        let Ok(mut app_state) = managed.try_lock() else { return };
+        let Ok(mut app_state) = managed.try_lock() else {
+            return;
+        };
 
         if let Some(ref db) = app_state.bible_db {
             if let Ok(translations) = db.list_translations() {
                 if let Some(t) = translations.iter().find(|t| t.abbreviation == abbrev) {
+                    if let Ok(verses) = db.load_all_verses_for_quotation(Some(&t.language)) {
+                        app_state.quotation_matcher =
+                            rhema_detection::QuotationMatcher::build(verses);
+                    }
                     app_state.active_translation_id = t.id;
                     log::info!("[STT] Voice command: switched to {abbrev} (id={})", t.id);
                     drop(app_state);
 
-                    let _ = app.emit("translation_command", TranslationSwitch {
-                        abbreviation: abbrev,
-                        translation_id: t.id,
-                    });
+                    let _ = app.emit(
+                        "translation_command",
+                        TranslationSwitch {
+                            abbreviation: abbrev,
+                            translation_id: t.id,
+                        },
+                    );
                 }
             }
         }
@@ -998,7 +1062,9 @@ fn run_quotation_matching(app: &AppHandle, transcript: &str) {
     }
 
     let managed: State<'_, Mutex<AppState>> = app.state();
-    let Ok(app_state) = managed.try_lock() else { return }; // AppState busy
+    let Ok(app_state) = managed.try_lock() else {
+        return;
+    }; // AppState busy
 
     if !app_state.quotation_matcher.is_ready() {
         return;
@@ -1059,9 +1125,7 @@ fn run_quotation_matching(app: &AppHandle, transcript: &str) {
 
 /// Stop the transcription pipeline (audio capture + STT provider).
 #[tauri::command]
-pub fn stop_transcription(
-    state: State<'_, Mutex<AppState>>,
-) -> Result<(), String> {
+pub fn stop_transcription(state: State<'_, Mutex<AppState>>) -> Result<(), String> {
     let mut app_state = state.lock().map_err(|e| e.to_string())?;
 
     // Always reset flags — idempotent stop handles cases where the frontend
@@ -1095,13 +1159,13 @@ pub fn get_stt_status(state: State<'_, Mutex<AppState>>) -> Result<bool, String>
 /// finalizes the current MP3 segment; resumed opens a fresh one. Segments
 /// merge into one file on End Session.
 #[tauri::command]
-pub fn set_recording_paused(
-    state: State<'_, Mutex<AppState>>,
-    paused: bool,
-) -> Result<(), String> {
+pub fn set_recording_paused(state: State<'_, Mutex<AppState>>, paused: bool) -> Result<(), String> {
     let app_state = state.lock().map_err(|e| e.to_string())?;
     app_state.recording_paused.store(paused, Ordering::SeqCst);
-    log::info!("[REC] recording {}", if paused { "paused" } else { "resumed" });
+    log::info!(
+        "[REC] recording {}",
+        if paused { "paused" } else { "resumed" }
+    );
     Ok(())
 }
 
@@ -1271,8 +1335,8 @@ pub async fn verify_assemblyai_key(api_key: String) -> Result<VerifyResult, Stri
     let mut ws_err: Option<String> = None;
     if http_ok {
         // v3 auth is via `token` query param, not an HTTP header.
-        let mut url = url::Url::parse("wss://streaming.assemblyai.com/v3/ws")
-            .map_err(|e| e.to_string())?;
+        let mut url =
+            url::Url::parse("wss://streaming.assemblyai.com/v3/ws").map_err(|e| e.to_string())?;
         {
             let mut q = url.query_pairs_mut();
             q.append_pair("token", &api_key);
@@ -1394,9 +1458,10 @@ pub async fn verify_deepseek_key(api_key: String) -> Result<VerifyResult, String
         Ok(r) if r.status() == reqwest::StatusCode::UNAUTHORIZED => {
             (false, "Invalid key (401)".into())
         }
-        Ok(r) if r.status() == reqwest::StatusCode::FORBIDDEN => {
-            (false, "Forbidden (402/403) — check billing / balance".into())
-        }
+        Ok(r) if r.status() == reqwest::StatusCode::FORBIDDEN => (
+            false,
+            "Forbidden (402/403) — check billing / balance".into(),
+        ),
         Ok(r) => (false, format!("Unexpected HTTP {}", r.status())),
         Err(e) => (false, format!("HTTP probe failed: {e}")),
     };
@@ -1408,4 +1473,3 @@ pub async fn verify_deepseek_key(api_key: String) -> Result<VerifyResult, String
         detail,
     })
 }
-

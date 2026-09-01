@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState, memo } from "react"
-import { renderVerse } from "@/lib/verse-renderer"
+import { drawThemeLogo, renderVerse } from "@/lib/verse-renderer"
+import { getHtmlLowerThirdImage } from "@/lib/html-lower-third"
 import type { BroadcastTheme, VerseRenderData } from "@/types"
 import { cn } from "@/lib/utils"
 
@@ -42,8 +43,8 @@ export const CanvasVerse = memo(function CanvasVerse({
   verse,
   fullscreenImage = null,
   blankLogo = false,
-  blankLogoLabel = "Adenta Campus",
-  blankLogoUrl = "/EWC-White.png",
+  blankLogoLabel = "Bebu, Kumasi",
+  blankLogoUrl = "/ag-bebu.png",
   className,
 }: CanvasVerseProps) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -82,8 +83,14 @@ export const CanvasVerse = memo(function CanvasVerse({
 
     ctx.scale(dpr, dpr)
     const scale = displayW / theme.resolution.width
+    let cancelled = false
+    let htmlOverlay: HTMLImageElement | null = null
 
-    const drawFullscreenImage = (cx: CanvasRenderingContext2D, w: number, h: number) => {
+    const drawFullscreenImage = (
+      cx: CanvasRenderingContext2D,
+      w: number,
+      h: number
+    ) => {
       cx.fillStyle = "#000"
       cx.fillRect(0, 0, w, h)
       if (!fullscreenImage) return
@@ -98,7 +105,11 @@ export const CanvasVerse = memo(function CanvasVerse({
       cx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh)
     }
 
-    const drawBlankLogo = (cx: CanvasRenderingContext2D, w: number, h: number) => {
+    const drawBlankLogo = (
+      cx: CanvasRenderingContext2D,
+      w: number,
+      h: number
+    ) => {
       cx.fillStyle = "#000"
       cx.fillRect(0, 0, w, h)
       const img = sharedImageCache.get(blankLogoUrl)
@@ -119,11 +130,39 @@ export const CanvasVerse = memo(function CanvasVerse({
       cx.clearRect(0, 0, c.width, c.height)
       cx.scale(dpr, dpr)
       if (fullscreenImage) {
-        drawFullscreenImage(cx, theme.resolution.width * scale, theme.resolution.height * scale)
+        drawFullscreenImage(
+          cx,
+          theme.resolution.width * scale,
+          theme.resolution.height * scale
+        )
         return
       }
       if (blankLogo) {
-        drawBlankLogo(cx, theme.resolution.width * scale, theme.resolution.height * scale)
+        drawBlankLogo(
+          cx,
+          theme.resolution.width * scale,
+          theme.resolution.height * scale
+        )
+        return
+      }
+      if (theme.htmlTemplate) {
+        cx.fillStyle = "#171717"
+        cx.fillRect(
+          0,
+          0,
+          theme.resolution.width * scale,
+          theme.resolution.height * scale
+        )
+        if (htmlOverlay) {
+          cx.drawImage(
+            htmlOverlay,
+            0,
+            0,
+            theme.resolution.width * scale,
+            theme.resolution.height * scale
+          )
+        }
+        drawThemeLogo(cx, theme, scale, sharedImageCache)
         return
       }
       renderVerse(cx, theme, verse, { scale, imageCache: sharedImageCache })
@@ -141,15 +180,51 @@ export const CanvasVerse = memo(function CanvasVerse({
     if (blankLogo) {
       ensureImage(blankLogoUrl, rerender)
     }
+    if (theme.htmlTemplate) {
+      void getHtmlLowerThirdImage(theme, verse)
+        ?.then((image) => {
+          if (cancelled) return
+          htmlOverlay = image
+          rerender()
+        })
+        .catch(() => {})
+    }
 
     if (fullscreenImage) {
-      drawFullscreenImage(ctx, theme.resolution.width * scale, theme.resolution.height * scale)
+      drawFullscreenImage(
+        ctx,
+        theme.resolution.width * scale,
+        theme.resolution.height * scale
+      )
     } else if (blankLogo) {
-      drawBlankLogo(ctx, theme.resolution.width * scale, theme.resolution.height * scale)
+      drawBlankLogo(
+        ctx,
+        theme.resolution.width * scale,
+        theme.resolution.height * scale
+      )
+    } else if (theme.htmlTemplate) {
+      ctx.fillStyle = "#171717"
+      ctx.fillRect(
+        0,
+        0,
+        theme.resolution.width * scale,
+        theme.resolution.height * scale
+      )
     } else {
       renderVerse(ctx, theme, verse, { scale, imageCache: sharedImageCache })
     }
-  }, [theme, verse, fullscreenImage, blankLogo, blankLogoLabel, blankLogoUrl, containerWidth])
+    return () => {
+      cancelled = true
+    }
+  }, [
+    theme,
+    verse,
+    fullscreenImage,
+    blankLogo,
+    blankLogoLabel,
+    blankLogoUrl,
+    containerWidth,
+  ])
 
   return (
     <div ref={containerRef} className={cn("w-full", className)}>

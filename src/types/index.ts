@@ -14,29 +14,74 @@ export type {
 } from "./transcript"
 export type { Translation, Book, Verse, CrossReference } from "./bible"
 export type { QueueItem } from "./queue"
-export type { Song, SongStanza, SongSource, LineMode, GeniusHit, LrclibHit, OnlineHit, HymnalSource } from "./song"
-export { GHS_SEED_VERSION, HYMNAL_SOURCES, HYMNAL_NAMES, HYMNAL_BADGES, isHymnalSource } from "./song"
+export type {
+  Song,
+  SongStanza,
+  SongSource,
+  LineMode,
+  GeniusHit,
+  LrclibHit,
+  OnlineHit,
+  HymnalSource,
+} from "./song"
+export {
+  GHS_SEED_VERSION,
+  HYMNAL_SOURCES,
+  HYMNAL_NAMES,
+  HYMNAL_BADGES,
+  isHymnalSource,
+} from "./song"
 export type { DetectionResult, DetectionStatus } from "./detection"
-export type { BroadcastTheme, VerseRenderData, VerseSegment, RenderOptions, NotesSlide } from "./broadcast"
+export type {
+  BroadcastTheme,
+  BroadcastGradient,
+  VerseRenderData,
+  VerseSegment,
+  RenderOptions,
+  NotesSlide,
+} from "./broadcast"
+export type {
+  CameraBroadcastConfig,
+  CameraConnectionState,
+  CameraStatus,
+  LocalVideoInputConfig,
+  NdiInputSource,
+  NdiInputStatus,
+  NdiVideoInputConfig,
+  VideoFit,
+  VideoInputConfig,
+} from "./camera"
 export type {
   NdiAlphaMode,
   NdiConfigEventPayload,
   NdiFrameRate,
-  NdiFrameRequest,
   NdiResolution,
   NdiSessionInfo,
   NdiStartRequest,
 } from "./ndi"
 export type {
-  SessionStatus, PlannedScripture, SermonSession, CreateSessionRequest,
-  SessionDetection, SessionTranscriptSegment, SessionNote,
+  SessionStatus,
+  PlannedScripture,
+  SermonSession,
+  CreateSessionRequest,
+  SessionDetection,
+  SessionTranscriptSegment,
+  SessionNote,
 } from "./session"
 
 /* ------------------------- Service Plan ------------------------- */
 
 export type PlanKind = "template" | "session"
 
-export type PlanItemType = "verse" | "song" | "announcement" | "section" | "blank" | "momo" | "jesus" | "notes"
+export type PlanItemType =
+  | "verse"
+  | "song"
+  | "announcement"
+  | "section"
+  | "blank"
+  | "momo"
+  | "jesus"
+  | "notes"
 
 export interface TemplateMeta {
   id: number
@@ -147,7 +192,10 @@ export function parsePlanItem(item: PlanItem): PlanItemPayload | null {
       return { type: "song", ...(parsed as Omit<PlanItemSong, "type">) }
     }
     if (type === "announcement" && typeof parsed.title === "string") {
-      return { type: "announcement", ...(parsed as Omit<PlanItemAnnouncement, "type">) }
+      return {
+        type: "announcement",
+        ...(parsed as Omit<PlanItemAnnouncement, "type">),
+      }
     }
     if (type === "section" && typeof parsed.label === "string") {
       return { type: "section", label: parsed.label }
@@ -156,8 +204,10 @@ export function parsePlanItem(item: PlanItem): PlanItemPayload | null {
       return {
         type: "blank",
         showLogo: Boolean(parsed.showLogo),
-        imageUrl: typeof parsed.imageUrl === "string" ? parsed.imageUrl : undefined,
-        imageLabel: typeof parsed.imageLabel === "string" ? parsed.imageLabel : undefined,
+        imageUrl:
+          typeof parsed.imageUrl === "string" ? parsed.imageUrl : undefined,
+        imageLabel:
+          typeof parsed.imageLabel === "string" ? parsed.imageLabel : undefined,
       }
     }
     if (type === "momo") {
@@ -171,7 +221,9 @@ export function parsePlanItem(item: PlanItem): PlanItemPayload | null {
         type: "notes",
         title: typeof parsed.title === "string" ? parsed.title : "",
         lastSelection: Array.isArray(parsed.lastSelection)
-          ? (parsed.lastSelection as unknown[]).filter((n): n is number => typeof n === "number")
+          ? (parsed.lastSelection as unknown[]).filter(
+              (n): n is number => typeof n === "number"
+            )
           : [],
       }
     }

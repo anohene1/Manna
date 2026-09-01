@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+  <head>
+    <style>
+      .brand {
+        position: absolute;
+        top: 54px;
+        left: var(--manna-safe-left);
+        width: 96px;
+        max-height: 96px;
+        object-fit: contain;
+      }
+      .lower-third {
+        position: absolute;
+        left: var(--manna-safe-left);
+        right: var(--manna-safe-right);
+        bottom: var(--manna-safe-bottom);
+        padding: 28px 36px;
+        border-left: 10px solid #f5b942;
+        border-radius: 14px;
+        background: linear-gradient(90deg, rgba(8, 12, 22, 0.94), rgba(8, 12, 22, 0.38));
+        color: white;
+        font-family: Inter, Arial, sans-serif;
+      }
+      .verse { font-size: 46px; line-height: 1.22; }
+      .reference { margin-top: 14px; font-size: 25px; color: #f5b942; }
+    </style>
+  </head>
+  <body>
+    <img class="brand" src="{{logoUrl}}" alt="" />
+    <section class="lower-third" data-manna-lower-third>
+      <div class="verse">{{verse}}</div>
+      <div class="reference">{{reference}}</div>
+    </section>
+  </body>
+</html>

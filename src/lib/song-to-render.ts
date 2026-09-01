@@ -13,10 +13,11 @@ import type { QueueItem, Song, VerseRenderData } from "@/types"
  */
 export function songStanzaToRenderData(
   item: Extract<QueueItem, { kind: "song-stanza" }>,
-  song: Song | undefined,
+  song: Song | undefined
 ): VerseRenderData | null {
   if (!song) return null
   return {
+    contentType: "song",
     reference: item.reference,
     segments: [{ text: item.text }],
   }

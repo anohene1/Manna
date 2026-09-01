@@ -1,12 +1,16 @@
-#![expect(clippy::needless_pass_by_value, reason = "Tauri command extractors require pass-by-value")]
+#![expect(
+    clippy::needless_pass_by_value,
+    reason = "Tauri command extractors require pass-by-value"
+)]
 
 use std::sync::Mutex;
 
-use base64::Engine;
-use serde::{Deserialize, Serialize};
-use tauri::State;
-use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 use rhema_broadcast::ndi::{NdiRuntime, NdiSessionInfo, NdiStartRequest};
+use rhema_broadcast::ndi_input::{self, NdiInputRuntime, NdiInputSource, NdiInputStatus};
+use serde::{Deserialize, Serialize};
+use tauri::ipc::{InvokeBody, Request, Response};
+use tauri::utils::config::BackgroundThrottlingPolicy;
+use tauri::{Manager, State, WebviewUrl, WebviewWindowBuilder};
 
 /// Map `output_id` ("main" | "alt") to Tauri window label.
 fn window_label(output_id: &str) -> &'static str {
@@ -30,15 +34,6 @@ pub struct MonitorInfo {
     pub y: i32,
     pub scale: f64,
     pub is_primary: bool,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct NdiFrameRequest {
-    pub output_id: String,
-    pub width: u32,
-    pub height: u32,
-    pub rgba_base64: String,
 }
 
 #[tauri::command]
@@ -88,29 +83,48 @@ pub fn list_monitors(app: tauri::AppHandle) -> Result<Vec<MonitorInfo>, String> 
 }
 
 /// Ensure the broadcast window for a given output exists (creates hidden if not).
+///
+/// MUST stay `async`. `WebviewWindowBuilder::build()` deadlocks on Windows
+/// when called from a *synchronous* Tauri command — the native window is
+/// created but the WebView2 controller never finishes initializing, so the
+/// window shows up permanently blank and the command never returns. Async
+/// commands run off the main thread, which avoids the deadlock. See the
+/// "Known issues" note on `WebviewWindowBuilder::new`.
 #[tauri::command]
-pub fn ensure_broadcast_window(app: tauri::AppHandle, output_id: String) -> Result<(), String> {
+pub async fn ensure_broadcast_window(
+    app: tauri::AppHandle,
+    output_id: String,
+) -> Result<(), String> {
     let label = window_label(&output_id);
     if app.get_webview_window(label).is_some() {
         return Ok(());
     }
-    WebviewWindowBuilder::new(
-        &app,
-        label,
-        WebviewUrl::App(window_url(&output_id).into()),
-    )
-    .title(if output_id == "alt" { "Manna Broadcast Alt" } else { "Manna Broadcast" })
-    .inner_size(1920.0, 1080.0)
-    .visible(false)
-    .skip_taskbar(true)
-    .focused(false)
-    .build()
-    .map_err(|e| e.to_string())?;
+    WebviewWindowBuilder::new(&app, label, WebviewUrl::App(window_url(&output_id).into()))
+        .title(if output_id == "alt" {
+            "Manna Broadcast Alt"
+        } else {
+            "Manna Broadcast"
+        })
+        .inner_size(1920.0, 1080.0)
+        .background_throttling(BackgroundThrottlingPolicy::Disabled)
+        .visible(false)
+        .skip_taskbar(true)
+        .focused(false)
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    log::info!("[broadcast] hidden broadcast window '{label}' created");
     Ok(())
 }
 
+/// Open (or move) the visible projector window on the given monitor.
+///
+/// MUST stay `async` — see the note on `ensure_broadcast_window`.
+/// `WebviewWindowBuilder::build()` deadlocks on Windows when called from a
+/// synchronous command, which manifests as a projector window that appears
+/// on the right display but stays permanently blank.
 #[tauri::command]
-pub fn open_broadcast_window(
+pub async fn open_broadcast_window(
     app: tauri::AppHandle,
     output_id: String,
     monitor_index: usize,
@@ -144,7 +158,10 @@ pub fn open_broadcast_window(
     let size = monitor.size();
     log::info!(
         "[broadcast] target monitor pos=({},{}) size={}x{}",
-        pos.x, pos.y, size.width, size.height
+        pos.x,
+        pos.y,
+        size.width,
+        size.height
     );
 
     // If window already exists, reposition + resize it in place, then re-enter
@@ -167,10 +184,12 @@ pub fn open_broadcast_window(
         window.show().map_err(|e| e.to_string())?;
         window.set_focus().ok();
         // Re-enter fullscreen after the window has been physically moved.
+        // See the comment in ensure_broadcast_window on why this blocking
+        // dispatcher call runs via spawn_blocking rather than inline.
         let win = window.clone();
         tauri::async_runtime::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(180)).await;
-            let _ = win.set_fullscreen(true);
+            let _ = tauri::async_runtime::spawn_blocking(move || win.set_fullscreen(true)).await;
         });
         return Ok(());
     }
@@ -184,30 +203,46 @@ pub fn open_broadcast_window(
     // Borderless window sized to the target monitor's full bounds. Lives
     // natively on the target display, then we promote to native fullscreen so
     // the OS menu bar / dock disappear on the projector display.
-    let window = WebviewWindowBuilder::new(
-        &app,
-        label,
-        WebviewUrl::App(window_url(&output_id).into()),
-    )
-    .title(title)
-    .position(f64::from(pos.x), f64::from(pos.y))
-    .inner_size(f64::from(size.width), f64::from(size.height))
-    .decorations(false)
-    .resizable(false)
-    .always_on_top(false)
-    .skip_taskbar(false)
-    .focused(true)
-    .visible(true)
-    .build()
-    .map_err(|e| e.to_string())?;
+    //
+    // NOTE: WebviewWindowBuilder::position()/inner_size() take LOGICAL pixels,
+    // but `pos`/`size` above are PHYSICAL (from Monitor::position()/size()).
+    // Feeding physical values straight into the logical-pixel builder places
+    // the window at the wrong spot (and wrong size) on any monitor whose
+    // scale factor isn't exactly 1.0 — the window then lands off the target
+    // display entirely. Convert with the monitor's own scale factor and pass
+    // logical values to the builder.
+    let scale = monitor.scale_factor();
+    let logical_x = f64::from(pos.x) / scale;
+    let logical_y = f64::from(pos.y) / scale;
+    let logical_w = f64::from(size.width) / scale;
+    let logical_h = f64::from(size.height) / scale;
+
+    let window =
+        WebviewWindowBuilder::new(&app, label, WebviewUrl::App(window_url(&output_id).into()))
+            .title(title)
+            .position(logical_x, logical_y)
+            .inner_size(logical_w, logical_h)
+            .background_throttling(BackgroundThrottlingPolicy::Disabled)
+            .decorations(false)
+            .resizable(false)
+            .always_on_top(false)
+            .skip_taskbar(false)
+            .focused(true)
+            .visible(true)
+            .build()
+            .map_err(|e| e.to_string())?;
+
+    log::info!("[broadcast] projector window '{label}' created on monitor {monitor_index}");
 
     // Wait a moment for the window to settle on the target monitor before
     // entering native fullscreen — macOS uses the window's CURRENT screen as
     // the fullscreen target, so we must let the move land first.
+    // `set_fullscreen` is a blocking dispatcher call, so run it on the
+    // blocking pool rather than inline in this async task.
     let win = window.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_millis(220)).await;
-        let _ = win.set_fullscreen(true);
+        let _ = tauri::async_runtime::spawn_blocking(move || win.set_fullscreen(true)).await;
     });
 
     Ok(())
@@ -227,9 +262,7 @@ pub fn set_broadcast_fullscreen(
     if fullscreen {
         // Enter native fullscreen. macOS animates into a fullscreen Space; the
         // chrome is hidden by the OS regardless of decorations flag.
-        window
-            .set_fullscreen(true)
-            .map_err(|e| e.to_string())?;
+        window.set_fullscreen(true).map_err(|e| e.to_string())?;
         window.show().map_err(|e| e.to_string())?;
         window.set_focus().map_err(|e| e.to_string())?;
     } else {
@@ -239,26 +272,24 @@ pub fn set_broadcast_fullscreen(
         // (false)` lands too late and the window stays borderless + locked.
         let _ = window.set_decorations(true);
         let _ = window.set_resizable(true);
-        window
-            .set_fullscreen(false)
-            .map_err(|e| e.to_string())?;
+        window.set_fullscreen(false).map_err(|e| e.to_string())?;
         // Re-apply on the next tick — macOS sometimes drops the styleMask
         // changes during the fullscreen exit animation.
         let win = window.clone();
         tauri::async_runtime::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-            let _ = win.set_decorations(true);
-            let _ = win.set_resizable(true);
+            let _ = tauri::async_runtime::spawn_blocking(move || {
+                let _ = win.set_decorations(true);
+                let _ = win.set_resizable(true);
+            })
+            .await;
         });
     }
     Ok(())
 }
 
 #[tauri::command]
-pub fn is_broadcast_fullscreen(
-    app: tauri::AppHandle,
-    output_id: String,
-) -> Result<bool, String> {
+pub fn is_broadcast_fullscreen(app: tauri::AppHandle, output_id: String) -> Result<bool, String> {
     let label = window_label(&output_id);
     let window = app
         .get_webview_window(label)
@@ -304,9 +335,7 @@ pub fn start_ndi(
     request: NdiStartRequest,
 ) -> Result<NdiSessionInfo, String> {
     let mut runtime = runtime.lock().map_err(|e| e.to_string())?;
-    runtime
-        .start(output_id, request)
-        .map_err(|e| e.to_string())
+    runtime.start(output_id, request).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -341,16 +370,99 @@ pub fn get_ndi_status(
     }
 }
 
+/// Push a composited RGBA output frame without JSON/base64 expansion.
+/// Packet layout: output byte (0 main, 1 alt), width LE u32, height LE u32, RGBA bytes.
 #[tauri::command]
-pub fn push_ndi_frame(
+pub fn push_ndi_frame_binary(
     runtime: State<'_, Mutex<NdiRuntime>>,
-    request: NdiFrameRequest,
+    request: Request<'_>,
 ) -> Result<(), String> {
-    let rgba_data = base64::engine::general_purpose::STANDARD
-        .decode(&request.rgba_base64)
-        .map_err(|e| format!("base64 decode error: {e}"))?;
-    let mut runtime = runtime.lock().map_err(|e| e.to_string())?;
+    let InvokeBody::Raw(packet) = request.body() else {
+        return Err("binary NDI frame command requires a raw IPC body".to_string());
+    };
+    if packet.len() < 9 {
+        return Err("binary NDI frame header is incomplete".to_string());
+    }
+    let output_id = if packet[0] == 1 { "alt" } else { "main" };
+    let width = u32::from_le_bytes(
+        packet[1..5]
+            .try_into()
+            .map_err(|_| "invalid width header")?,
+    );
+    let height = u32::from_le_bytes(
+        packet[5..9]
+            .try_into()
+            .map_err(|_| "invalid height header")?,
+    );
+    let expected = usize::try_from(width)
+        .ok()
+        .and_then(|width| {
+            usize::try_from(height)
+                .ok()
+                .and_then(|height| width.checked_mul(height))
+        })
+        .and_then(|pixels| pixels.checked_mul(4))
+        .ok_or_else(|| "binary NDI frame dimensions overflow the platform size".to_string())?;
+    if packet.len() - 9 != expected {
+        return Err(format!(
+            "binary NDI frame has {} bytes; expected {expected}",
+            packet.len() - 9
+        ));
+    }
     runtime
-        .send_frame_rgba(&request.output_id, request.width, request.height, &rgba_data)
-        .map_err(|e| e.to_string())
+        .lock()
+        .map_err(|error| error.to_string())?
+        .send_frame_rgba(output_id, width, height, &packet[9..])
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn list_ndi_sources() -> Result<Vec<NdiInputSource>, String> {
+    tauri::async_runtime::spawn_blocking(ndi_input::list_sources)
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn start_ndi_input(
+    source_name: String,
+    url_address: Option<String>,
+    runtime: State<'_, Mutex<NdiInputRuntime>>,
+) -> Result<NdiInputStatus, String> {
+    runtime
+        .lock()
+        .map_err(|error| error.to_string())?
+        .start(source_name, url_address.as_deref())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn stop_ndi_input(runtime: State<'_, Mutex<NdiInputRuntime>>) -> Result<(), String> {
+    runtime.lock().map_err(|error| error.to_string())?.stop();
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_ndi_input_status(
+    runtime: State<'_, Mutex<NdiInputRuntime>>,
+) -> Result<NdiInputStatus, String> {
+    runtime
+        .lock()
+        .map_err(|error| error.to_string())?
+        .status()
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn pull_ndi_frame(
+    after_sequence: u64,
+    runtime: State<'_, Mutex<NdiInputRuntime>>,
+) -> Result<Response, String> {
+    let packet = runtime
+        .lock()
+        .map_err(|error| error.to_string())?
+        .frame_packet(after_sequence)
+        .map_err(|error| error.to_string())?;
+    Ok(Response::new(packet))
 }

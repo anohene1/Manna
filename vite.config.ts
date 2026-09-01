@@ -9,6 +9,12 @@ export default defineConfig({
   server: {
     port: 3000,
     strictPort: true,
+    watch: {
+      // Avoid watching Cargo's build output — on Windows, the linker holds
+      // an exclusive lock on app_lib.dll while writing it, and Vite's watcher
+      // racing to open the same file throws EBUSY and kills the dev server.
+      ignored: ["**/src-tauri/target/**"],
+    },
   },
   build: {
     outDir: "build",

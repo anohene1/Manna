@@ -37,7 +37,7 @@ async function main() {
     "optimum-onnx[onnxruntime]",
     "onnx",
     "onnxruntime",
-    "sentence-transformers",
+    "sentence-transformers==5.4.1",
     "accelerate",
   ])
 

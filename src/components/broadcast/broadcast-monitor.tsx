@@ -1,13 +1,32 @@
 import { useState, useEffect } from "react"
-import { ChevronLeftIcon, ChevronRightIcon, ChevronDownIcon, CheckIcon, PauseIcon, PlayIcon, XIcon } from "lucide-react"
-import { useBroadcastStore, useBibleStore, useSessionStore, useQueueStore, useSongStore } from "@/stores"
-import { queueVerseToRenderData, toVerseRenderData } from "@/hooks/use-broadcast"
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ChevronDownIcon,
+  CheckIcon,
+  PauseIcon,
+  PlayIcon,
+  XIcon,
+  CameraIcon,
+} from "lucide-react"
+import {
+  useBroadcastStore,
+  useBibleStore,
+  useSessionStore,
+  useQueueStore,
+  useSongStore,
+} from "@/stores"
+import {
+  queueVerseToRenderData,
+  toVerseRenderData,
+} from "@/hooks/use-broadcast"
 import { switchTranslation } from "@/lib/switch-translation"
 import { bibleActions } from "@/hooks/use-bible"
 import { songStanzaToRenderData } from "@/lib/song-to-render"
 import { invoke } from "@tauri-apps/api/core"
 import type { Verse } from "@/types"
 import { CanvasVerse } from "@/components/ui/canvas-verse"
+import { CameraInputDrawer } from "@/components/broadcast/camera-input-drawer"
 
 function renderQueueItemAt(index: number) {
   const item = useQueueStore.getState().items[index]
@@ -17,14 +36,19 @@ function renderQueueItemAt(index: number) {
     return songStanzaToRenderData(item, song)
   }
   if (item.kind === "verse") {
-    const trans = useBibleStore.getState().translations
-      .find(t => t.id === useBibleStore.getState().activeTranslationId)?.abbreviation ?? "KJV"
+    const trans =
+      useBibleStore
+        .getState()
+        .translations.find(
+          (t) => t.id === useBibleStore.getState().activeTranslationId
+        )?.abbreviation ?? "KJV"
     return queueVerseToRenderData(item, trans)
   }
   return null
 }
 
 export function BroadcastMonitor() {
+  const [cameraDrawerOpen, setCameraDrawerOpen] = useState(false)
   const previewVerse = useBroadcastStore((s) => s.previewVerse)
   const liveVerse = useBroadcastStore((s) => s.liveVerse)
   const fullscreenImage = useBroadcastStore((s) => s.fullscreenImage)
@@ -39,6 +63,9 @@ export function BroadcastMonitor() {
   const translations = useBibleStore((s) => s.translations)
   const activeTranslationId = useBibleStore((s) => s.activeTranslationId)
   const activeSession = useSessionStore((s) => s.activeSession)
+  const cameraActive = useBroadcastStore((s) => s.cameraActive)
+  const cameraConnection = useBroadcastStore((s) => s.cameraConnection)
+  const programPreviewUrl = useBroadcastStore((s) => s.programPreviewUrl)
 
   const activeTheme = themes.find((t) => t.id === activeThemeId) ?? themes[0]
 
@@ -52,9 +79,15 @@ export function BroadcastMonitor() {
     const start = new Date(activeSession.startedAt).getTime()
     const tick = () => {
       const diff = Date.now() - start
-      const h = Math.floor(diff / 3600000).toString().padStart(2, "0")
-      const m = Math.floor((diff % 3600000) / 60000).toString().padStart(2, "0")
-      const s = Math.floor((diff % 60000) / 1000).toString().padStart(2, "0")
+      const h = Math.floor(diff / 3600000)
+        .toString()
+        .padStart(2, "0")
+      const m = Math.floor((diff % 3600000) / 60000)
+        .toString()
+        .padStart(2, "0")
+      const s = Math.floor((diff % 60000) / 1000)
+        .toString()
+        .padStart(2, "0")
       setElapsed(`${h}:${m}:${s}`)
     }
     tick()
@@ -65,7 +98,11 @@ export function BroadcastMonitor() {
   const parseRef = (ref: string) => {
     const match = ref.match(/^(.+?)\s+(\d+):(\d+)/)
     if (!match) return null
-    return { bookName: match[1], chapter: parseInt(match[2]), verse: parseInt(match[3]) }
+    return {
+      bookName: match[1],
+      chapter: parseInt(match[2]),
+      verse: parseInt(match[3]),
+    }
   }
 
   const stepVerse = async (delta: number) => {
@@ -83,7 +120,9 @@ export function BroadcastMonitor() {
       if (render) {
         if (isLive) {
           useBroadcastStore.getState().setLiveVerse(render)
-          useBroadcastStore.getState().setPreviewVerse(renderQueueItemAt(nextIdx + delta))
+          useBroadcastStore
+            .getState()
+            .setPreviewVerse(renderQueueItemAt(nextIdx + delta))
         } else {
           useBroadcastStore.getState().setPreviewVerse(render)
         }
@@ -99,7 +138,7 @@ export function BroadcastMonitor() {
 
     const translationId = useBibleStore.getState().activeTranslationId
     const books = useBibleStore.getState().books
-    const book = books.find(b => b.name === parsed.bookName)
+    const book = books.find((b) => b.name === parsed.bookName)
     if (!book) return
 
     try {
@@ -113,8 +152,11 @@ export function BroadcastMonitor() {
 
       bibleActions.selectVerse(verse)
 
-      const trans = useBibleStore.getState().translations
-        .find(t => t.id === translationId)?.abbreviation ?? "KJV"
+      const trans =
+        useBibleStore
+          .getState()
+          .translations.find((t) => t.id === translationId)?.abbreviation ??
+        "KJV"
       const verseData = toVerseRenderData(verse, trans)
 
       if (isLive) {
@@ -127,7 +169,9 @@ export function BroadcastMonitor() {
             verse: targetVerse + delta,
           })
           if (nextVerse) {
-            useBroadcastStore.getState().setPreviewVerse(toVerseRenderData(nextVerse, trans))
+            useBroadcastStore
+              .getState()
+              .setPreviewVerse(toVerseRenderData(nextVerse, trans))
           } else {
             useBroadcastStore.getState().setPreviewVerse(null)
           }
@@ -145,215 +189,279 @@ export function BroadcastMonitor() {
   const hasVerse = previewVerse || liveVerse
 
   return (
-    <div className="flex h-full flex-col gap-2 overflow-y-auto bg-[#0d0d0c] p-2">
-      {/* On Screen — top */}
-      <div>
-        <div className="mb-1 flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
-            {isLive && (
-              <div className="h-1.5 w-1.5 rounded-full bg-destructive shadow-[0_0_6px_rgba(239,68,68,0.5)]" />
-            )}
-            <span
-              className={`text-[9px] font-semibold uppercase tracking-widest ${isLive ? "text-destructive" : "text-white/35"}`}
-            >
-              On Screen {isLive ? "— Live" : ""}
-            </span>
-          </div>
-          <div className="flex items-center gap-1">
-            {announcement && <AnnouncementControl announcement={announcement} />}
-            <button
-              onClick={() => {
-                const b = useBroadcastStore.getState()
-                b.setBlankLogo(true)
-              }}
-              className={`rounded border px-2 py-0.5 text-[9px] font-semibold uppercase transition-colors ${
-                blankLogo
-                  ? "border-primary/40 bg-primary/20 text-primary"
-                  : "border-white/15 bg-white/[0.04] text-white/60 hover:bg-white/[0.08]"
-              }`}
-              title="Show church logo blank screen"
-            >
-              Blank
-            </button>
-            {isLive ? (
-              <button
-                onClick={clearScreen}
-                className="rounded border border-destructive/25 bg-destructive/12 px-2 py-0.5 text-[9px] font-semibold uppercase text-destructive transition-colors hover:bg-destructive/20"
-                title="Clear the live output and close the projector window"
+    <>
+      <div className="flex h-full flex-col gap-2 overflow-y-auto bg-[#0d0d0c] p-2">
+        {/* On Screen — top */}
+        <div>
+          <div className="mb-1 flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              {isLive && (
+                <div className="h-1.5 w-1.5 rounded-full bg-destructive shadow-[0_0_6px_rgba(239,68,68,0.5)]" />
+              )}
+              <span
+                className={`text-[9px] font-semibold tracking-widest uppercase ${isLive ? "text-destructive" : "text-white/35"}`}
               >
-                Clear Output
-              </button>
-            ) : (
+                On Screen {isLive ? "— Live" : ""}
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              {announcement && (
+                <AnnouncementControl announcement={announcement} />
+              )}
               <button
-                onClick={() => useBroadcastStore.getState().showProjector()}
-                className="rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[9px] font-semibold uppercase text-emerald-400 transition-colors hover:bg-emerald-500/20"
-                title="Reopen projector window on last-used monitor"
+                onClick={() => setCameraDrawerOpen(true)}
+                className={`flex items-center gap-1 rounded border px-2 py-0.5 text-[9px] font-semibold uppercase transition-colors ${
+                  cameraActive
+                    ? "border-emerald-500/35 bg-emerald-500/12 text-emerald-400"
+                    : "border-white/15 bg-white/[0.04] text-white/60 hover:bg-white/[0.08]"
+                }`}
+                title="Configure camera input"
               >
-                Show Projector
+                <CameraIcon className="size-2.5" />
+                {cameraActive ? cameraConnection : "Camera"}
               </button>
-            )}
-          </div>
-        </div>
-        <div className={`overflow-hidden rounded ${isLive ? "ring-2 ring-destructive/40" : "ring-1 ring-white/[0.08]"}`}>
-          <CanvasVerse
-            theme={activeTheme}
-            verse={liveVerse}
-            fullscreenImage={fullscreenImage}
-            blankLogo={blankLogo}
-            className="w-full"
-          />
-        </div>
-      </div>
-
-      {/* Controls */}
-      <div className="flex items-center gap-1">
-        <button
-          onClick={() => stepVerse(-1)}
-          disabled={!hasVerse}
-          className="flex flex-1 items-center justify-center gap-1 rounded border border-white/8 bg-white/4 py-1 text-[9px] font-medium text-white/40 transition-colors hover:bg-white/8 disabled:opacity-25"
-        >
-          <ChevronLeftIcon className="size-2.5" />
-          Prev
-        </button>
-        <button
-          onClick={() => stepVerse(1)}
-          disabled={!hasVerse}
-          className="flex flex-1 items-center justify-center gap-1 rounded border border-white/8 bg-white/4 py-1 text-[9px] font-medium text-white/40 transition-colors hover:bg-white/8 disabled:opacity-25"
-        >
-          Next
-          <ChevronRightIcon className="size-2.5" />
-        </button>
-      </div>
-
-      {/* Preview — bottom */}
-      <div>
-        <div className="mb-1 flex items-center justify-between">
-          <span className="text-[9px] font-semibold uppercase tracking-widest text-white/35">
-            Preview
-          </span>
-          {previewVerse && (
-            <button
-              onClick={goLive}
-              className="rounded bg-primary px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-primary-foreground transition-colors hover:bg-primary/90"
-            >
-              Go Live
-            </button>
-          )}
-        </div>
-        <div className="overflow-hidden rounded ring-1 ring-blue-500/15">
-          <CanvasVerse
-            theme={activeTheme}
-            verse={previewVerse}
-            className="w-full"
-          />
-        </div>
-      </div>
-
-      {/* ── Quick Controls ─────────────────────────── */}
-      <div className="flex flex-col gap-2 border-t border-white/6 pt-2">
-
-        {/* Session info card */}
-        {activeSession && (
-          <div className="overflow-hidden rounded-lg bg-gradient-to-br from-white/[0.04] to-white/[0.02] ring-1 ring-white/[0.06]">
-            <div className="flex items-center justify-between px-3 py-2.5">
-              <div className="flex min-w-0 flex-col gap-0.5">
-                <span className="truncate text-[11px] font-medium text-white/70">
-                  {activeSession.title}
-                </span>
-                <div className="flex items-center gap-1.5">
-                  {activeSession.status === "live" && (
-                    <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_4px_rgba(16,185,129,0.5)]" />
-                  )}
-                  <span className="text-[9px] capitalize text-white/30">
-                    {activeSession.status}
-                  </span>
-                </div>
-              </div>
-              {activeSession.status === "live" && (
-                <div className="flex flex-col items-end">
-                  <span className="font-mono text-[13px] font-semibold tabular-nums text-white/50">
-                    {elapsed}
-                  </span>
-                </div>
+              <button
+                onClick={() => {
+                  const b = useBroadcastStore.getState()
+                  b.setBlankLogo(!blankLogo)
+                }}
+                className={`rounded border px-2 py-0.5 text-[9px] font-semibold uppercase transition-colors ${
+                  blankLogo
+                    ? "border-primary/40 bg-primary/20 text-primary"
+                    : "border-white/15 bg-white/[0.04] text-white/60 hover:bg-white/[0.08]"
+                }`}
+                title={
+                  blankLogo
+                    ? "Return to the camera program"
+                    : "Temporarily show the branded projection"
+                }
+              >
+                {blankLogo ? "Return" : "Brand"}
+              </button>
+              {isLive ? (
+                <button
+                  onClick={clearScreen}
+                  className="rounded border border-destructive/25 bg-destructive/12 px-2 py-0.5 text-[9px] font-semibold text-destructive uppercase transition-colors hover:bg-destructive/20"
+                  title={
+                    cameraActive
+                      ? "Clear the verse and keep the camera live"
+                      : "Clear the live output and close the projector window"
+                  }
+                >
+                  {cameraActive ? "Clear Verse" : "Clear Output"}
+                </button>
+              ) : (
+                <button
+                  onClick={() => useBroadcastStore.getState().showProjector()}
+                  className="rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[9px] font-semibold text-emerald-400 uppercase transition-colors hover:bg-emerald-500/20"
+                  title="Reopen projector window on last-used monitor"
+                >
+                  Show Projector
+                </button>
               )}
             </div>
           </div>
-        )}
+          <div
+            className={`overflow-hidden rounded ${isLive ? "ring-2 ring-destructive/40" : "ring-1 ring-white/[0.08]"}`}
+          >
+            {cameraActive &&
+            programPreviewUrl &&
+            !fullscreenImage &&
+            !blankLogo ? (
+              <img
+                src={programPreviewUrl}
+                alt="Live camera program"
+                className="aspect-video w-full bg-black object-contain"
+              />
+            ) : (
+              <CanvasVerse
+                theme={activeTheme}
+                verse={liveVerse}
+                fullscreenImage={fullscreenImage}
+                blankLogo={blankLogo}
+                className="w-full"
+              />
+            )}
+          </div>
+        </div>
 
-        {/* Theme selector — accordion */}
-        <AccordionSection title="Theme" subtitle={activeTheme?.name}>
-          <div className="grid grid-cols-3 gap-2">
-            {themes.map((t) => {
-              const isActive = t.id === activeThemeId
-              const bg = t.background
-              const bgStyle: React.CSSProperties = bg.type === "gradient" && bg.gradient
-                ? {
-                    background: bg.gradient.type === "radial"
-                      ? `radial-gradient(${bg.gradient.stops.map(s => `${s.color} ${s.position}%`).join(", ")})`
-                      : `linear-gradient(${bg.gradient.angle}deg, ${bg.gradient.stops.map(s => `${s.color} ${s.position}%`).join(", ")})`,
-                  }
-                : { backgroundColor: bg.color }
-              return (
+        {/* Controls */}
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => stepVerse(-1)}
+            disabled={!hasVerse}
+            className="flex flex-1 items-center justify-center gap-1 rounded border border-white/8 bg-white/4 py-1 text-[9px] font-medium text-white/40 transition-colors hover:bg-white/8 disabled:opacity-25"
+          >
+            <ChevronLeftIcon className="size-2.5" />
+            Prev
+          </button>
+          <button
+            onClick={() => stepVerse(1)}
+            disabled={!hasVerse}
+            className="flex flex-1 items-center justify-center gap-1 rounded border border-white/8 bg-white/4 py-1 text-[9px] font-medium text-white/40 transition-colors hover:bg-white/8 disabled:opacity-25"
+          >
+            Next
+            <ChevronRightIcon className="size-2.5" />
+          </button>
+        </div>
+
+        {/* Preview — bottom */}
+        <div>
+          <div className="mb-1 flex items-center justify-between">
+            <span className="text-[9px] font-semibold tracking-widest text-white/35 uppercase">
+              Preview
+            </span>
+            {previewVerse && (
+              <button
+                onClick={goLive}
+                className="rounded bg-primary px-2 py-0.5 text-[9px] font-bold tracking-wide text-primary-foreground uppercase transition-colors hover:bg-primary/90"
+              >
+                Go Live
+              </button>
+            )}
+          </div>
+          <div className="overflow-hidden rounded ring-1 ring-blue-500/15">
+            <CanvasVerse
+              theme={activeTheme}
+              verse={previewVerse}
+              className="w-full"
+            />
+          </div>
+        </div>
+
+        {/* ── Quick Controls ─────────────────────────── */}
+        <div className="flex flex-col gap-2 border-t border-white/6 pt-2">
+          {/* Session info card */}
+          {activeSession && (
+            <div className="overflow-hidden rounded-lg bg-gradient-to-br from-white/[0.04] to-white/[0.02] ring-1 ring-white/[0.06]">
+              <div className="flex items-center justify-between px-3 py-2.5">
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <span className="truncate text-[11px] font-medium text-white/70">
+                    {activeSession.title}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {activeSession.status === "live" && (
+                      <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_4px_rgba(16,185,129,0.5)]" />
+                    )}
+                    <span className="text-[9px] text-white/30 capitalize">
+                      {activeSession.status}
+                    </span>
+                  </div>
+                </div>
+                {activeSession.status === "live" && (
+                  <div className="flex flex-col items-end">
+                    <span className="font-mono text-[13px] font-semibold text-white/50 tabular-nums">
+                      {elapsed}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Theme selector — accordion */}
+          <AccordionSection title="Theme" subtitle={activeTheme?.name}>
+            <div className="grid grid-cols-3 gap-2">
+              {themes
+                .filter((t) => t.kind !== "lower-third")
+                .map((t) => {
+                  const isActive = t.id === activeThemeId
+                  const bg = t.background
+                  const bgStyle: React.CSSProperties =
+                    bg.type === "gradient" && bg.gradient
+                      ? {
+                          background:
+                            bg.gradient.type === "radial"
+                              ? `radial-gradient(${bg.gradient.stops.map((s) => `${s.color} ${s.position}%`).join(", ")})`
+                              : `linear-gradient(${bg.gradient.angle}deg, ${bg.gradient.stops.map((s) => `${s.color} ${s.position}%`).join(", ")})`,
+                        }
+                      : { backgroundColor: bg.color }
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => setActiveTheme(t.id)}
+                      className={`group relative flex aspect-video flex-col items-center justify-center overflow-hidden rounded-md transition-all ${
+                        isActive
+                          ? "shadow-[0_0_8px_rgba(61,107,79,0.4)] ring-2 ring-primary"
+                          : "ring-1 ring-white/[0.08] hover:ring-white/20"
+                      }`}
+                      style={bgStyle}
+                    >
+                      <span
+                        className="px-1 text-center text-[5px] leading-tight"
+                        style={{
+                          fontFamily: t.verseText.fontFamily,
+                          color: t.verseText.color,
+                        }}
+                      >
+                        The Lord is my shepherd
+                      </span>
+                      <span
+                        className="mt-0.5 text-[3px] tracking-widest uppercase"
+                        style={{
+                          fontFamily: t.reference.fontFamily,
+                          color: t.reference.color,
+                        }}
+                      >
+                        Psalm 23:1
+                      </span>
+                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-1 pt-2 pb-0.5">
+                        <span className="text-[5px] font-medium text-white/80">
+                          {t.name}
+                        </span>
+                      </div>
+                      {isActive && (
+                        <div className="absolute top-0.5 right-0.5 flex size-3 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                          <CheckIcon className="size-2" strokeWidth={3} />
+                        </div>
+                      )}
+                    </button>
+                  )
+                })}
+            </div>
+          </AccordionSection>
+
+          {/* Translation toggle — accordion */}
+          <AccordionSection
+            title="Translation"
+            subtitle={
+              translations.find((t) => t.id === activeTranslationId)
+                ?.abbreviation
+            }
+            defaultOpen
+          >
+            <div className="flex flex-wrap gap-1.5">
+              {translations.map((t) => (
                 <button
                   key={t.id}
-                  onClick={() => setActiveTheme(t.id)}
-                  className={`group relative flex aspect-video flex-col items-center justify-center overflow-hidden rounded-md transition-all ${
-                    isActive
-                      ? "ring-2 ring-primary shadow-[0_0_8px_rgba(61,107,79,0.4)]"
-                      : "ring-1 ring-white/[0.08] hover:ring-white/20"
+                  onClick={() => switchTranslation(t.id)}
+                  className={`rounded-full px-3 py-1.5 text-[10px] font-semibold transition-all ${
+                    t.id === activeTranslationId
+                      ? "bg-primary text-primary-foreground shadow-[0_0_8px_rgba(61,107,79,0.3)]"
+                      : "bg-white/[0.04] text-white/35 ring-1 ring-white/[0.06] hover:bg-white/[0.08] hover:text-white/60"
                   }`}
-                  style={bgStyle}
                 >
-                  <span
-                    className="px-1 text-center text-[5px] leading-tight"
-                    style={{ fontFamily: t.verseText.fontFamily, color: t.verseText.color }}
-                  >
-                    The Lord is my shepherd
-                  </span>
-                  <span
-                    className="mt-0.5 text-[3px] uppercase tracking-widest"
-                    style={{ fontFamily: t.reference.fontFamily, color: t.reference.color }}
-                  >
-                    Psalm 23:1
-                  </span>
-                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-1 pb-0.5 pt-2">
-                    <span className="text-[5px] font-medium text-white/80">{t.name}</span>
-                  </div>
-                  {isActive && (
-                    <div className="absolute right-0.5 top-0.5 flex size-3 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                      <CheckIcon className="size-2" strokeWidth={3} />
-                    </div>
-                  )}
+                  {t.abbreviation}
                 </button>
-              )
-            })}
-          </div>
-        </AccordionSection>
-
-        {/* Translation toggle — accordion */}
-        <AccordionSection title="Translation" subtitle={translations.find(t => t.id === activeTranslationId)?.abbreviation} defaultOpen>
-          <div className="flex flex-wrap gap-1.5">
-            {translations.slice(0, 7).map((t) => (
-              <button
-                key={t.id}
-                onClick={() => switchTranslation(t.id)}
-                className={`rounded-full px-3 py-1.5 text-[10px] font-semibold transition-all ${
-                  t.id === activeTranslationId
-                    ? "bg-primary text-primary-foreground shadow-[0_0_8px_rgba(61,107,79,0.3)]"
-                    : "bg-white/[0.04] text-white/35 ring-1 ring-white/[0.06] hover:bg-white/[0.08] hover:text-white/60"
-                }`}
-              >
-                {t.abbreviation}
-              </button>
-            ))}
-          </div>
-        </AccordionSection>
+              ))}
+            </div>
+          </AccordionSection>
+        </div>
       </div>
-    </div>
+      <CameraInputDrawer
+        open={cameraDrawerOpen}
+        onOpenChange={setCameraDrawerOpen}
+      />
+    </>
   )
 }
 
-function AccordionSection({ title, subtitle, children, defaultOpen = false }: {
+function AccordionSection({
+  title,
+  subtitle,
+  children,
+  defaultOpen = false,
+}: {
   title: string
   subtitle?: string
   children: React.ReactNode
@@ -367,18 +475,20 @@ function AccordionSection({ title, subtitle, children, defaultOpen = false }: {
         className="flex w-full items-center justify-between px-3 py-2 transition-colors hover:bg-white/[0.04]"
       >
         <div className="flex items-center gap-2">
-          <span className="text-[10px] font-semibold uppercase tracking-widest text-white/40">{title}</span>
+          <span className="text-[10px] font-semibold tracking-widest text-white/40 uppercase">
+            {title}
+          </span>
           {subtitle && !open && (
-            <span className="text-[10px] font-medium text-white/60">{subtitle}</span>
+            <span className="text-[10px] font-medium text-white/60">
+              {subtitle}
+            </span>
           )}
         </div>
-        <ChevronDownIcon className={`size-3 text-white/25 transition-transform ${open ? "" : "-rotate-90"}`} />
+        <ChevronDownIcon
+          className={`size-3 text-white/25 transition-transform ${open ? "" : "-rotate-90"}`}
+        />
       </button>
-      {open && (
-        <div className="px-3 pb-3 pt-1.5">
-          {children}
-        </div>
-      )}
+      {open && <div className="px-3 pt-1.5 pb-3">{children}</div>}
     </div>
   )
 }
@@ -386,10 +496,13 @@ function AccordionSection({ title, subtitle, children, defaultOpen = false }: {
 function AnnouncementControl({
   announcement,
 }: {
-  announcement: NonNullable<ReturnType<typeof useBroadcastStore.getState>["announcement"]>
+  announcement: NonNullable<
+    ReturnType<typeof useBroadcastStore.getState>["announcement"]
+  >
 }) {
   const [now, setNow] = useState(() => Date.now())
-  const hasDuration = announcement.expiresAt != null || announcement.remainingMs != null
+  const hasDuration =
+    announcement.expiresAt != null || announcement.remainingMs != null
   useEffect(() => {
     if (!hasDuration) return
     const id = window.setInterval(() => setNow(Date.now()), 250)
@@ -397,7 +510,7 @@ function AnnouncementControl({
   }, [hasDuration])
 
   const remainingMs = announcement.paused
-    ? announcement.remainingMs ?? 0
+    ? (announcement.remainingMs ?? 0)
     : announcement.expiresAt
       ? Math.max(0, announcement.expiresAt - now)
       : null
@@ -406,7 +519,7 @@ function AnnouncementControl({
 
   return (
     <div className="flex items-center gap-1 rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5">
-      <span className="text-[9px] font-semibold uppercase tracking-wide text-amber-400">
+      <span className="text-[9px] font-semibold tracking-wide text-amber-400 uppercase">
         {announcement.mode === "ticker" ? "Ticker" : "Slide"}
         {secs != null && ` · ${secs}s`}
       </span>
@@ -414,12 +527,19 @@ function AnnouncementControl({
         <button
           onClick={() => {
             const b = useBroadcastStore.getState()
-            announcement.paused ? b.resumeAnnouncement() : b.pauseAnnouncement()
+            if (announcement.paused) b.resumeAnnouncement()
+            else b.pauseAnnouncement()
           }}
           className="rounded p-0.5 text-amber-400 hover:bg-amber-500/20"
-          title={announcement.paused ? "Resume announcement" : "Pause announcement"}
+          title={
+            announcement.paused ? "Resume announcement" : "Pause announcement"
+          }
         >
-          {announcement.paused ? <PlayIcon className="size-3" /> : <PauseIcon className="size-3" />}
+          {announcement.paused ? (
+            <PlayIcon className="size-3" />
+          ) : (
+            <PauseIcon className="size-3" />
+          )}
         </button>
       )}
       <button

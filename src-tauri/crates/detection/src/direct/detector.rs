@@ -53,6 +53,12 @@ const TRANSLATION_COMMANDS: &[(&str, &str)] = &[
     ("switch to amplified", "AMP"),
     ("amplified bible", "AMP"),
     ("amplified version", "AMP"),
+    // Asante Twi
+    ("give me twi", "NA-TWI"),
+    ("read in twi", "NA-TWI"),
+    ("switch to twi", "NA-TWI"),
+    ("in twi", "NA-TWI"),
+    ("asante twi", "NA-TWI"),
 ];
 
 /// Maximum chapter count per book (`book_number` 1-66).
@@ -311,6 +317,7 @@ impl DirectDetector {
                 "nlt" => Some("NLT"),
                 "kjv" => Some("KJV"),
                 "amp" | "amplified" => Some("AMP"),
+                "twi" => Some("NA-TWI"),
                 _ => None,
             };
             if let Some(abbrev) = matched {
@@ -806,5 +813,14 @@ mod tests {
         assert_eq!(results[0].verse_ref.book_name, "Philippians");
         assert_eq!(results[0].verse_ref.chapter, 4);
         assert_eq!(results[0].verse_ref.verse_start, 13);
+    }
+
+    #[test]
+    fn detects_asante_twi_translation_command() {
+        let detector = DirectDetector::new();
+        assert_eq!(
+            detector.detect_translation_command("Please switch to Twi"),
+            Some("NA-TWI".to_string())
+        );
     }
 }

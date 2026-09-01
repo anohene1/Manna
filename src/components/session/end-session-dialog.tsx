@@ -25,9 +25,16 @@ export function EndSessionDialog() {
     setIsEnding(true)
     try {
       // Stop transcription + merge audio segments into the final recording
-      // before flipping the session to completed.
+      // before flipping the session to completed. finalizeRecording has its
+      // own internal timeouts, but endSession itself is also guarded here —
+      // this action must never leave the dialog stuck on "Ending…" forever.
       await finalizeRecording(sessionId)
-      const updated = await endSession(sessionId)
+      const updated = await Promise.race([
+        endSession(sessionId),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("end_session timed out")), 5000),
+        ),
+      ])
       const manualSummary = summary.trim()
       if (manualSummary) {
         await updateSummary(sessionId, manualSummary)

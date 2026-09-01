@@ -4,5 +4,7 @@
 <dict>
     <key>NSMicrophoneUsageDescription</key>
     <string>Manna needs microphone access to listen to the sermon and detect Bible verses in real time.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>Manna needs camera access to place live video behind Bible verse lower thirds.</string>
 </dict>
 </plist>

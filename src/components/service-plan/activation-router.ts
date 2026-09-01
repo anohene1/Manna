@@ -1,5 +1,10 @@
 // src/components/service-plan/activation-router.ts
-import { useBroadcastStore, useBibleStore, useQueueStore, useSettingsStore } from "@/stores"
+import {
+  useBroadcastStore,
+  useBibleStore,
+  useQueueStore,
+  useSettingsStore,
+} from "@/stores"
 import { resolveBrandAsset } from "@/lib/brand"
 import { parsePlanItem } from "@/types"
 import type { PlanItem } from "@/types"
@@ -31,7 +36,10 @@ export function activatePlanItem(item: PlanItem): void {
 
     case "blank":
       if (parsed.imageUrl) {
-        broadcast.setFullscreenImage({ url: parsed.imageUrl, label: parsed.imageLabel ?? "" })
+        broadcast.setFullscreenImage({
+          url: parsed.imageUrl,
+          label: parsed.imageLabel ?? "",
+        })
       } else if (parsed.showLogo) {
         broadcast.setLiveVerse(null)
         broadcast.setBlankLogo(true)
@@ -43,9 +51,12 @@ export function activatePlanItem(item: PlanItem): void {
 
     case "verse": {
       const bible = useBibleStore.getState()
-      const translation = bible.translations.find((t) => t.id === parsed.translationId)
+      const translation = bible.translations.find(
+        (t) => t.id === parsed.translationId
+      )
       const abbreviation = translation?.abbreviation ?? "KJV"
       broadcast.setLiveVerse({
+        contentType: "scripture",
         reference: `${parsed.bookName} ${parsed.chapter}:${parsed.verse} (${abbreviation})`,
         segments: [{ text: parsed.verseText, verseNumber: parsed.verse }],
       })
@@ -66,13 +77,19 @@ export function activatePlanItem(item: PlanItem): void {
 
     case "momo": {
       const brand = useSettingsStore.getState().brand
-      broadcast.setFullscreenImage({ url: resolveBrandAsset("momo", brand.momoImagePath), label: "MoMo" })
+      broadcast.setFullscreenImage({
+        url: resolveBrandAsset("momo", brand.momoImagePath),
+        label: "MoMo",
+      })
       return
     }
 
     case "jesus": {
       const brand = useSettingsStore.getState().brand
-      broadcast.setFullscreenImage({ url: resolveBrandAsset("jesus", brand.jesusImagePath), label: "Jesus" })
+      broadcast.setFullscreenImage({
+        url: resolveBrandAsset("jesus", brand.jesusImagePath),
+        label: "Jesus",
+      })
       return
     }
 

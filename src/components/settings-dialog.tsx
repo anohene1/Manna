@@ -1025,6 +1025,7 @@ function BibleSection() {
 
   const englishTranslations = translations.filter((t) => t.language === "en")
   const otherTranslations = translations.filter((t) => t.language !== "en")
+  const activeTranslation = translations.find((t) => t.id === activeId)
 
   return (
     <div className="flex flex-col gap-6">
@@ -1071,6 +1072,12 @@ function BibleSection() {
           Detected verses will display in this translation.
           {translations.length > 0 && ` ${translations.length} translations available.`}
         </p>
+        {activeTranslation?.language === "tw" && (
+          <p className="text-[0.625rem] text-muted-foreground">
+            Use Local Whisper for Twi speech recognition. The cloud providers do not currently
+            support Twi transcription.
+          </p>
+        )}
       </div>
     </div>
   )

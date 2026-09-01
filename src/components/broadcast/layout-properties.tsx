@@ -24,12 +24,22 @@ export function LayoutProperties() {
 
   const layout = draftTheme.layout
   const resolution = draftTheme.resolution
-  const referenceGap = layout.referenceGap ?? Math.max(16, Math.round(draftTheme.reference.fontSize * 0.5))
+  const referenceGap =
+    layout.referenceGap ??
+    Math.max(16, Math.round(draftTheme.reference.fontSize * 0.5))
 
-  const bgWidthPx = Math.round((layout.backgroundWidth / 100) * resolution.width)
-  const bgHeightPx = Math.round((layout.backgroundHeight / 100) * resolution.height)
-  const textWidthPx = Math.round((layout.textAreaWidth / 100) * resolution.width)
-  const textHeightPx = Math.round((layout.textAreaHeight / 100) * resolution.height)
+  const bgWidthPx = Math.round(
+    (layout.backgroundWidth / 100) * resolution.width
+  )
+  const bgHeightPx = Math.round(
+    (layout.backgroundHeight / 100) * resolution.height
+  )
+  const textWidthPx = Math.round(
+    (layout.textAreaWidth / 100) * resolution.width
+  )
+  const textHeightPx = Math.round(
+    (layout.textAreaHeight / 100) * resolution.height
+  )
 
   const verseNumbers = draftTheme.verseNumbers
   const superscriptSizePct = Math.round(
@@ -46,8 +56,10 @@ export function LayoutProperties() {
       {/* Width */}
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between">
-          <label className="text-xs font-medium text-muted-foreground">Width</label>
-          <span className="text-xs tabular-nums text-muted-foreground">
+          <label className="text-xs font-medium text-muted-foreground">
+            Width
+          </label>
+          <span className="text-xs text-muted-foreground tabular-nums">
             {layout.backgroundWidth}% ({bgWidthPx}px)
           </span>
         </div>
@@ -63,14 +75,16 @@ export function LayoutProperties() {
       {/* Height */}
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between">
-          <label className="text-xs font-medium text-muted-foreground">Height</label>
-          <span className="text-xs tabular-nums text-muted-foreground">
+          <label className="text-xs font-medium text-muted-foreground">
+            Height
+          </label>
+          <span className="text-xs text-muted-foreground tabular-nums">
             {layout.backgroundHeight}% ({bgHeightPx}px)
           </span>
         </div>
         <Slider
           min={10}
-          max={100}
+          max={draftTheme.kind === "lower-third" ? 45 : 100}
           step={1}
           value={[layout.backgroundHeight]}
           onValueChange={([v]) => update("layout.backgroundHeight", v)}
@@ -85,8 +99,10 @@ export function LayoutProperties() {
       {/* Text Width */}
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between">
-          <label className="text-xs font-medium text-muted-foreground">Text Width</label>
-          <span className="text-xs tabular-nums text-muted-foreground">
+          <label className="text-xs font-medium text-muted-foreground">
+            Text Width
+          </label>
+          <span className="text-xs text-muted-foreground tabular-nums">
             {layout.textAreaWidth}% ({textWidthPx}px)
           </span>
         </div>
@@ -102,8 +118,10 @@ export function LayoutProperties() {
       {/* Text Height */}
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between">
-          <label className="text-xs font-medium text-muted-foreground">Text Height</label>
-          <span className="text-xs tabular-nums text-muted-foreground">
+          <label className="text-xs font-medium text-muted-foreground">
+            Text Height
+          </label>
+          <span className="text-xs text-muted-foreground tabular-nums">
             {layout.textAreaHeight}% ({textHeightPx}px)
           </span>
         </div>
@@ -123,39 +141,55 @@ export function LayoutProperties() {
 
       <div className="grid grid-cols-2 gap-2">
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-muted-foreground">Top</label>
+          <label className="text-xs font-medium text-muted-foreground">
+            Top
+          </label>
           <Input
             type="number"
             min={0}
             value={layout.padding.top}
-            onChange={(e) => update("layout.padding.top", Number(e.target.value))}
+            onChange={(e) =>
+              update("layout.padding.top", Number(e.target.value))
+            }
           />
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-muted-foreground">Right</label>
+          <label className="text-xs font-medium text-muted-foreground">
+            Right
+          </label>
           <Input
             type="number"
             min={0}
             value={layout.padding.right}
-            onChange={(e) => update("layout.padding.right", Number(e.target.value))}
+            onChange={(e) =>
+              update("layout.padding.right", Number(e.target.value))
+            }
           />
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-muted-foreground">Bottom</label>
+          <label className="text-xs font-medium text-muted-foreground">
+            Bottom
+          </label>
           <Input
             type="number"
             min={0}
             value={layout.padding.bottom}
-            onChange={(e) => update("layout.padding.bottom", Number(e.target.value))}
+            onChange={(e) =>
+              update("layout.padding.bottom", Number(e.target.value))
+            }
           />
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-muted-foreground">Left</label>
+          <label className="text-xs font-medium text-muted-foreground">
+            Left
+          </label>
           <Input
             type="number"
             min={0}
             value={layout.padding.left}
-            onChange={(e) => update("layout.padding.left", Number(e.target.value))}
+            onChange={(e) =>
+              update("layout.padding.left", Number(e.target.value))
+            }
           />
         </div>
       </div>
@@ -167,8 +201,12 @@ export function LayoutProperties() {
 
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between">
-          <label className="text-xs font-medium text-muted-foreground">Verse / Reference</label>
-          <span className="text-xs tabular-nums text-muted-foreground">{referenceGap}px</span>
+          <label className="text-xs font-medium text-muted-foreground">
+            Verse / Reference
+          </label>
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {referenceGap}px
+          </span>
         </div>
         <Slider
           min={0}
@@ -186,7 +224,9 @@ export function LayoutProperties() {
 
       {/* Reference Position */}
       <div className="flex flex-col gap-1.5">
-        <label className="text-xs font-medium text-muted-foreground">Reference Position</label>
+        <label className="text-xs font-medium text-muted-foreground">
+          Reference Position
+        </label>
         <Select
           value={draftTheme.reference.position}
           onValueChange={(v) => update("reference.position", v)}
@@ -204,7 +244,9 @@ export function LayoutProperties() {
 
       {/* Verse Number Superscript */}
       <div className="flex items-center justify-between">
-        <label className="text-xs font-medium text-muted-foreground">Verse Number Superscript</label>
+        <label className="text-xs font-medium text-muted-foreground">
+          Verse Number Superscript
+        </label>
         <input
           type="checkbox"
           checked={verseNumbers.superscript}
@@ -217,8 +259,12 @@ export function LayoutProperties() {
       {verseNumbers.superscript && (
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center justify-between">
-            <label className="text-xs font-medium text-muted-foreground">Superscript Size</label>
-            <span className="text-xs tabular-nums text-muted-foreground">{superscriptSizePct}%</span>
+            <label className="text-xs font-medium text-muted-foreground">
+              Superscript Size
+            </label>
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {superscriptSizePct}%
+            </span>
           </div>
           <Slider
             min={20}
@@ -226,7 +272,9 @@ export function LayoutProperties() {
             step={1}
             value={[superscriptSizePct]}
             onValueChange={([v]) => {
-              const newFontSize = Math.round((v / 100) * draftTheme.verseText.fontSize)
+              const newFontSize = Math.round(
+                (v / 100) * draftTheme.verseText.fontSize
+              )
               update("verseNumbers.fontSize", newFontSize)
             }}
           />
@@ -235,7 +283,9 @@ export function LayoutProperties() {
 
       {/* Verse Numbers Visible */}
       <div className="flex items-center justify-between">
-        <label className="text-xs font-medium text-muted-foreground">Verse Numbers Visible</label>
+        <label className="text-xs font-medium text-muted-foreground">
+          Verse Numbers Visible
+        </label>
         <Switch
           checked={verseNumbers.visible}
           onCheckedChange={(checked) => update("verseNumbers.visible", checked)}
@@ -244,7 +294,9 @@ export function LayoutProperties() {
 
       {/* Verse Numbers Color */}
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-muted-foreground">Verse Numbers Color</label>
+        <label className="text-xs font-medium text-muted-foreground">
+          Verse Numbers Color
+        </label>
         <div className="flex items-center gap-2">
           <input
             type="color"
@@ -270,7 +322,10 @@ export function LayoutProperties() {
       </div>
 
       <div className="grid grid-cols-3 gap-1">
-        {ANCHOR_POSITIONS.flat().map((pos) => (
+        {(draftTheme.kind === "lower-third"
+          ? ANCHOR_POSITIONS[2]
+          : ANCHOR_POSITIONS.flat()
+        ).map((pos) => (
           <button
             key={pos}
             onClick={() => update("layout.anchor", pos)}
@@ -292,8 +347,12 @@ export function LayoutProperties() {
 
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between">
-          <label className="text-xs font-medium text-muted-foreground">Offset X</label>
-          <span className="text-xs tabular-nums text-muted-foreground">{layout.offsetX}px</span>
+          <label className="text-xs font-medium text-muted-foreground">
+            Offset X
+          </label>
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {layout.offsetX}px
+          </span>
         </div>
         <Slider
           min={-200}
@@ -306,8 +365,12 @@ export function LayoutProperties() {
 
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between">
-          <label className="text-xs font-medium text-muted-foreground">Offset Y</label>
-          <span className="text-xs tabular-nums text-muted-foreground">{layout.offsetY}px</span>
+          <label className="text-xs font-medium text-muted-foreground">
+            Offset Y
+          </label>
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {layout.offsetY}px
+          </span>
         </div>
         <Slider
           min={-200}

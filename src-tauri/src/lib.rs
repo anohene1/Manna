@@ -20,7 +20,7 @@ fn get_flavor() -> &'static str {
 
 /// Resolve a bundled resource path. Checks `resource_dir/<rel>` first
 /// (production install); falls back to `$CARGO_MANIFEST_DIR/../<rel>` (dev mode).
-fn resolve_resource(app: &tauri::App, rel: &str) -> std::path::PathBuf {
+fn resolve_resource(app: &tauri::AppHandle, rel: &str) -> std::path::PathBuf {
     use tauri::Manager;
     app.path()
         .resource_dir()
@@ -243,6 +243,9 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .manage(Mutex::new(state::AppState::new()))
         .manage(Mutex::new(rhema_broadcast::ndi::NdiRuntime::default()))
+        .manage(Mutex::new(
+            rhema_broadcast::ndi_input::NdiInputRuntime::default(),
+        ))
         .manage(Mutex::new(rhema_detection::DirectDetector::new()))
         .manage(Mutex::new(rhema_detection::DetectionMerger::new()))
         .manage(Mutex::new(rhema_detection::ReadingMode::new()))
@@ -328,7 +331,12 @@ pub fn run() {
             commands::broadcast::start_ndi,
             commands::broadcast::stop_ndi,
             commands::broadcast::get_ndi_status,
-            commands::broadcast::push_ndi_frame,
+            commands::broadcast::push_ndi_frame_binary,
+            commands::broadcast::list_ndi_sources,
+            commands::broadcast::start_ndi_input,
+            commands::broadcast::stop_ndi_input,
+            commands::broadcast::get_ndi_input_status,
+            commands::broadcast::pull_ndi_frame,
             commands::remote::start_osc,
             commands::remote::stop_osc,
             commands::remote::get_osc_status,
@@ -426,158 +434,186 @@ pub fn run() {
                 Err(e) => log::warn!("[sleep] failed to acquire keepawake: {e}"),
             }
 
-            // Resource-dir first (production), dev fallback via resolve_resource.
-            // Installer places rhema.db at $RESOURCE_DIR/data/rhema.db per the
-            // per-flavor tauri.conf.*.json resources block.
-            let db_path = resolve_resource(app, "data/rhema.db");
+            // Bible DB load + quotation index build + ONNX embedding model load
+            // are all CPU/IO-heavy (the Qwen3 embedding model alone can take
+            // tens of seconds to initialize). Running them inline here blocks
+            // this setup() closure, which blocks the window from appearing /
+            // pumping messages at all — Windows reports the whole app as
+            // "Not Responding" until they finish. Do this on a background
+            // blocking thread instead so the window shows up immediately;
+            // Bible/semantic-search commands simply return "not loaded yet"
+            // for the few seconds until this task completes.
+            let setup_handle = app.handle().clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                let app = &setup_handle;
 
-            if db_path.exists() {
-                match rhema_bible::BibleDb::open(&db_path) {
-                    Ok(bible_db) => {
-                        // Build quotation matching index from all English verses
-                        log::info!("Building quotation matching index...");
-                        let quotation_matcher = match bible_db.load_all_verses_for_quotation(Some("en")) {
-                            Ok(verses) => {
-                                log::info!("Loaded {} English verses for quotation index", verses.len());
-                                rhema_detection::QuotationMatcher::build(verses)
+                // Resource-dir first (production), dev fallback via resolve_resource.
+                // Installer places rhema.db at $RESOURCE_DIR/data/rhema.db per the
+                // per-flavor tauri.conf.*.json resources block.
+                let db_path = resolve_resource(app, "data/rhema.db");
+
+                if db_path.exists() {
+                    match rhema_bible::BibleDb::open(&db_path) {
+                        Ok(bible_db) => {
+                            // Install the database immediately. Building the quotation
+                            // index can take several seconds; keeping BibleDb behind it
+                            // made the first list_translations/list_books calls fail and
+                            // left the frontend empty for the whole session.
+                            let managed_state = app.state::<Mutex<state::AppState>>();
+                            match managed_state.lock() {
+                                Ok(mut state) => {
+                                    state.bible_db = Some(bible_db);
+                                    log::info!("Bible database loaded from {}", db_path.display());
+                                }
+                                Err(_) => {
+                                    log::error!("Could not acquire AppState lock to install Bible DB; Bible features disabled this session");
+                                    return;
+                                }
                             }
-                            Err(e) => {
-                                log::warn!("Failed to load verses for quotation index: {e}");
-                                rhema_detection::QuotationMatcher::new()
-                            }
-                        };
 
-                        let managed_state = app.state::<Mutex<state::AppState>>();
-                        match managed_state.lock() {
-                            Ok(mut state) => {
-                                state.bible_db = Some(bible_db);
-                                state.quotation_matcher = quotation_matcher;
-                                drop(state);
-                                log::info!("Bible database loaded from {}", db_path.display());
-                            }
-                            Err(_) => log::error!("Could not acquire AppState lock to install Bible DB; Bible features disabled this session"),
-                        };
-                    }
-                    Err(e) => {
-                        log::error!(
-                            "Bible database at {} present but unreadable: {e}; \
-                             Bible features disabled this session",
-                            db_path.display()
-                        );
-                    }
-                }
-            } else {
-                log::warn!("Bible database not found at {}", db_path.display());
-            }
-
-            // Try to load ONNX embedding model and pre-computed verse index.
-            // In production installs, resources live under $RESOURCE_DIR per the
-            // flavor config; in dev mode resolve_resource falls back to project root.
-            let minilm_model = resolve_resource(app, "models/all-MiniLM-L6-v2/onnx/model.onnx");
-            let minilm_tok = resolve_resource(app, "models/all-MiniLM-L6-v2/tokenizer.json");
-            let minilm_emb = resolve_resource(app, "embeddings/kjv-minilm-l6-v2.bin");
-            let minilm_ids = resolve_resource(app, "embeddings/kjv-minilm-l6-v2-ids.bin");
-
-            let qwen_int8 = resolve_resource(app, "models/qwen3-embedding-0.6b-int8/model_quantized.onnx");
-            let qwen_fp32 = resolve_resource(app, "models/qwen3-embedding-0.6b/model.onnx");
-            let qwen_tok = resolve_resource(app, "models/qwen3-embedding-0.6b/tokenizer.json");
-            let qwen_emb = resolve_resource(app, "embeddings/kjv-qwen3-0.6b.bin");
-            let qwen_ids = resolve_resource(app, "embeddings/kjv-qwen3-0.6b-ids.bin");
-
-            // Prefer Qwen3 INT8 when present, but keep FP32/MiniLM fallbacks.
-            // OnnxEmbedder validates the graph signature at load time, so a
-            // stale generation/KV-cache INT8 export is rejected and startup can
-            // still try the next known-good model.
-            let model_candidates = [
-                (
-                    "Qwen3 INT8 embedding model (quality, 1024-dim, lower RAM)",
-                    qwen_int8,
-                    qwen_tok.clone(),
-                    qwen_emb.clone(),
-                    qwen_ids.clone(),
-                ),
-                (
-                    "Qwen3 FP32 embedding model (quality, 1024-dim, 1.1GB)",
-                    qwen_fp32,
-                    qwen_tok,
-                    qwen_emb,
-                    qwen_ids,
-                ),
-                (
-                    "MiniLM-L6-v2 embedding model (fast, 384-dim)",
-                    minilm_model,
-                    minilm_tok,
-                    minilm_emb,
-                    minilm_ids,
-                ),
-            ];
-
-            #[cfg(feature = "onnx")]
-            {
-                use rhema_detection::semantic::embedder::TextEmbedder;
-                use rhema_detection::semantic::index::VectorIndex;
-
-                let mut semantic_loaded = false;
-                for (label, model_path, tokenizer_path, embeddings_path, ids_path) in model_candidates {
-                    if !model_path.exists() || !tokenizer_path.exists() {
-                        continue;
-                    }
-                    if !embeddings_path.exists() || !ids_path.exists() {
-                        log::info!(
-                            "{label} found but embeddings missing. Run 'bun run export:verses' then the precompute binary."
-                        );
-                        continue;
-                    }
-
-                    log::info!("Using {label}");
-                    match rhema_detection::OnnxEmbedder::load(&model_path, &tokenizer_path) {
-                        Ok(embedder) => {
-                            let dim = embedder.dimension();
-                            match rhema_detection::HnswVectorIndex::load(&embeddings_path, &ids_path, dim) {
-                                Ok(index) => {
-                                    log::info!("ONNX embedding model loaded");
-                                    log::info!("Verse embeddings loaded ({} vectors)", index.len());
-                                    let managed_state = app.state::<Mutex<state::AppState>>();
-                                    match managed_state.lock() {
-                                        Ok(mut state) => {
-                                            state.detection_pipeline.set_semantic(
-                                                rhema_detection::SemanticDetector::new(
-                                                    Box::new(embedder),
-                                                    Box::new(index),
-                                                ),
-                                            );
-                                            semantic_loaded = true;
-                                            break;
+                            // Use a separate connection for the expensive index build so
+                            // normal lookup commands remain available while it runs.
+                            log::info!("Building quotation matching index...");
+                            match rhema_bible::BibleDb::open(&db_path) {
+                                Ok(index_db) => {
+                                    let quotation_matcher = match index_db.load_all_verses_for_quotation(Some("en")) {
+                                        Ok(verses) => {
+                                            log::info!("Loaded {} English verses for quotation index", verses.len());
+                                            rhema_detection::QuotationMatcher::build(verses)
                                         }
-                                        Err(_) => {
-                                            log::error!("AppState lock unavailable; semantic search disabled this session");
-                                            break;
+                                        Err(e) => {
+                                            log::warn!("Failed to load verses for quotation index: {e}");
+                                            rhema_detection::QuotationMatcher::new()
                                         }
                                     };
+                                    if let Ok(mut state) = managed_state.lock() {
+                                        state.quotation_matcher = quotation_matcher;
+                                    }
                                 }
-                                Err(e) => {
-                                    log::warn!("Failed to load verse embeddings for {label}: {e}");
-                                }
+                                Err(e) => log::warn!("Could not open Bible DB for quotation indexing: {e}"),
                             }
                         }
                         Err(e) => {
-                            log::warn!("Failed to load {label}: {e}");
+                            log::error!(
+                                "Bible database at {} present but unreadable: {e}; \
+                                 Bible features disabled this session",
+                                db_path.display()
+                            );
                         }
                     }
-
+                } else {
+                    log::warn!("Bible database not found at {}", db_path.display());
                 }
 
-                if !semantic_loaded {
-                    log::info!("ONNX model not found or failed to load. Semantic search disabled. Run 'bun run download:model' to download.");
-                };
-            }
+                // Try to load ONNX embedding model and pre-computed verse index.
+                // In production installs, resources live under $RESOURCE_DIR per the
+                // flavor config; in dev mode resolve_resource falls back to project root.
+                let minilm_model = resolve_resource(app, "models/all-MiniLM-L6-v2/onnx/model.onnx");
+                let minilm_tok = resolve_resource(app, "models/all-MiniLM-L6-v2/tokenizer.json");
+                let minilm_emb = resolve_resource(app, "embeddings/kjv-minilm-l6-v2.bin");
+                let minilm_ids = resolve_resource(app, "embeddings/kjv-minilm-l6-v2-ids.bin");
 
-            #[cfg(not(feature = "onnx"))]
-            {
-                // Keep compiler happy about unused path bindings when onnx is disabled.
-                let _ = &model_candidates;
-                log::info!("Built without 'onnx' feature — semantic detection disabled.");
-            }
+                let qwen_int8 = resolve_resource(app, "models/qwen3-embedding-0.6b-int8/model_quantized.onnx");
+                let qwen_fp32 = resolve_resource(app, "models/qwen3-embedding-0.6b/model.onnx");
+                let qwen_tok = resolve_resource(app, "models/qwen3-embedding-0.6b/tokenizer.json");
+                let qwen_emb = resolve_resource(app, "embeddings/kjv-qwen3-0.6b.bin");
+                let qwen_ids = resolve_resource(app, "embeddings/kjv-qwen3-0.6b-ids.bin");
+
+                // Prefer Qwen3 INT8 when present, but keep FP32/MiniLM fallbacks.
+                // OnnxEmbedder validates the graph signature at load time, so a
+                // stale generation/KV-cache INT8 export is rejected and startup can
+                // still try the next known-good model.
+                let model_candidates = [
+                    (
+                        "Qwen3 INT8 embedding model (quality, 1024-dim, lower RAM)",
+                        qwen_int8,
+                        qwen_tok.clone(),
+                        qwen_emb.clone(),
+                        qwen_ids.clone(),
+                    ),
+                    (
+                        "Qwen3 FP32 embedding model (quality, 1024-dim, 1.1GB)",
+                        qwen_fp32,
+                        qwen_tok,
+                        qwen_emb,
+                        qwen_ids,
+                    ),
+                    (
+                        "MiniLM-L6-v2 embedding model (fast, 384-dim)",
+                        minilm_model,
+                        minilm_tok,
+                        minilm_emb,
+                        minilm_ids,
+                    ),
+                ];
+
+                #[cfg(feature = "onnx")]
+                {
+                    use rhema_detection::semantic::embedder::TextEmbedder;
+                    use rhema_detection::semantic::index::VectorIndex;
+
+                    let mut semantic_loaded = false;
+                    for (label, model_path, tokenizer_path, embeddings_path, ids_path) in model_candidates {
+                        if !model_path.exists() || !tokenizer_path.exists() {
+                            continue;
+                        }
+                        if !embeddings_path.exists() || !ids_path.exists() {
+                            log::info!(
+                                "{label} found but embeddings missing. Run 'bun run export:verses' then the precompute binary."
+                            );
+                            continue;
+                        }
+
+                        log::info!("Using {label}");
+                        match rhema_detection::OnnxEmbedder::load(&model_path, &tokenizer_path) {
+                            Ok(embedder) => {
+                                let dim = embedder.dimension();
+                                match rhema_detection::HnswVectorIndex::load(&embeddings_path, &ids_path, dim) {
+                                    Ok(index) => {
+                                        log::info!("ONNX embedding model loaded");
+                                        log::info!("Verse embeddings loaded ({} vectors)", index.len());
+                                        let managed_state = app.state::<Mutex<state::AppState>>();
+                                        match managed_state.lock() {
+                                            Ok(mut state) => {
+                                                state.detection_pipeline.set_semantic(
+                                                    rhema_detection::SemanticDetector::new(
+                                                        Box::new(embedder),
+                                                        Box::new(index),
+                                                    ),
+                                                );
+                                                semantic_loaded = true;
+                                                break;
+                                            }
+                                            Err(_) => {
+                                                log::error!("AppState lock unavailable; semantic search disabled this session");
+                                                break;
+                                            }
+                                        };
+                                    }
+                                    Err(e) => {
+                                        log::warn!("Failed to load verse embeddings for {label}: {e}");
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to load {label}: {e}");
+                            }
+                        }
+
+                    }
+
+                    if !semantic_loaded {
+                        log::info!("ONNX model not found or failed to load. Semantic search disabled. Run 'bun run download:model' to download.");
+                    };
+                }
+
+                #[cfg(not(feature = "onnx"))]
+                {
+                    // Keep compiler happy about unused path bindings when onnx is disabled.
+                    let _ = &model_candidates;
+                    log::info!("Built without 'onnx' feature — semantic detection disabled.");
+                }
+            });
 
             // Seed hymnals into songs table — respects enabledHymnals setting,
             // idempotent via per-hymnal seed_version check.

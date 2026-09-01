@@ -1,12 +1,23 @@
 import { create } from "zustand"
 import { emit } from "@tauri-apps/api/event"
 import { invoke } from "@tauri-apps/api/core"
-import type { BroadcastTheme, VerseRenderData, NotesSlide } from "@/types"
+import type {
+  BroadcastTheme,
+  CameraConnectionState,
+  NotesSlide,
+  VideoFit,
+  VideoInputConfig,
+  VerseRenderData,
+} from "@/types"
 import { BUILTIN_THEMES } from "@/lib/builtin-themes"
 import { useSessionStore } from "@/stores/session-store"
 import { useBibleStore } from "@/stores/bible-store"
 import { useSettingsStore } from "@/stores/settings-store"
 import { resolveBrandAsset } from "@/lib/brand"
+import {
+  DEFAULT_LOWER_THIRD_THEME_ID,
+  persistCameraPreferences,
+} from "@/stores/settings-store"
 
 type SelectedElement = "verse" | "reference" | null
 
@@ -27,6 +38,34 @@ interface BroadcastState {
   projectorMonitorIndex: number | null
   setProjectorMonitorIndex: (idx: number | null) => void
   history: Array<{ verse: VerseRenderData; presentedAt: number }>
+
+  // Main-output camera mode
+  cameraActive: boolean
+  cameraSource: VideoInputConfig | null
+  cameraFit: VideoFit
+  cameraMirrored: boolean
+  lowerThirdThemeId: string
+  cameraConnection: CameraConnectionState
+  cameraError: string | null
+  programPreviewUrl: string | null
+  startCamera: (config?: {
+    source: VideoInputConfig
+    fit: VideoFit
+    mirrored: boolean
+    lowerThirdThemeId: string
+  }) => void
+  configureCamera: (config: {
+    source: VideoInputConfig
+    fit: VideoFit
+    mirrored: boolean
+    lowerThirdThemeId: string
+  }) => void
+  stopCamera: () => void
+  setCameraStatus: (
+    connection: CameraConnectionState,
+    error?: string | null
+  ) => void
+  setProgramPreviewUrl: (url: string | null) => void
 
   // Designer state
   isDesignerOpen: boolean
@@ -71,7 +110,11 @@ interface BroadcastState {
     remainingMs: number | null
     paused: boolean
   } | null
-  sendAnnouncement: (announcement: { text: string; mode: "ticker" | "slide"; duration: number | null }) => void
+  sendAnnouncement: (announcement: {
+    text: string
+    mode: "ticker" | "slide"
+    duration: number | null
+  }) => void
   pauseAnnouncement: () => void
   resumeAnnouncement: () => void
   dismissAnnouncement: () => void
@@ -80,8 +123,20 @@ interface BroadcastState {
 type Nested = Record<string, unknown> | unknown[]
 
 function sameVerseIdentity(
-  a: { id: number; translation_id: number; book_number: number; chapter: number; verse: number },
-  b: { id: number; translation_id: number; book_number: number; chapter: number; verse: number },
+  a: {
+    id: number
+    translation_id: number
+    book_number: number
+    chapter: number
+    verse: number
+  },
+  b: {
+    id: number
+    translation_id: number
+    book_number: number
+    chapter: number
+    verse: number
+  }
 ): boolean {
   if (a.id !== 0 && b.id !== 0) return a.id === b.id
   return (
@@ -94,7 +149,11 @@ function sameVerseIdentity(
 
 /** Immutably set a dot-path value, cloning each container along the way.
  *  Numeric path segments index into arrays (e.g. `"items.0.label"`). */
-function setNestedValue<T extends Nested>(obj: T, path: string, value: unknown): T {
+function setNestedValue<T extends Nested>(
+  obj: T,
+  path: string,
+  value: unknown
+): T {
   const parts = path.split(".").filter(Boolean)
   if (parts.length === 0) return obj
 
@@ -113,7 +172,9 @@ function setNestedValue<T extends Nested>(obj: T, path: string, value: unknown):
     if (index === parts.length - 1) {
       target[property] = value
     } else {
-      const child = (current as Record<string | number, unknown> | null | undefined)?.[property]
+      const child = (
+        current as Record<string | number, unknown> | null | undefined
+      )?.[property]
       target[property] = setAt(child, index + 1)
     }
     return next
@@ -130,29 +191,40 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
   previewVerse: null,
   liveVerse: null,
   history: [],
+  cameraActive: false,
+  cameraSource: null,
+  cameraFit: "cover",
+  cameraMirrored: false,
+  lowerThirdThemeId: DEFAULT_LOWER_THIRD_THEME_ID,
+  cameraConnection: "idle",
+  cameraError: null,
+  programPreviewUrl: null,
   isDesignerOpen: false,
   editingThemeId: null,
   draftTheme: null,
   selectedElement: null,
   blankLogo: false,
   setBlankLogo: (active) => {
+    const cameraActive = get().cameraActive
     set({
       blankLogo: active,
       fullscreenImage: active ? null : get().fullscreenImage,
-      liveVerse: active ? null : get().liveVerse,
+      liveVerse: active && !cameraActive ? null : get().liveVerse,
       liveNotes: active ? null : get().liveNotes,
       isLive: active ? true : get().isLive,
     })
     get().syncBroadcastOutput()
   },
   projectorMonitorIndex: null,
-  setProjectorMonitorIndex: (projectorMonitorIndex) => set({ projectorMonitorIndex }),
+  setProjectorMonitorIndex: (projectorMonitorIndex) =>
+    set({ projectorMonitorIndex }),
   fullscreenImage: null,
   setFullscreenImage: (fullscreenImage) => {
+    const cameraActive = get().cameraActive
     set({
       fullscreenImage,
       blankLogo: fullscreenImage ? false : get().blankLogo,
-      liveVerse: fullscreenImage ? null : get().liveVerse,
+      liveVerse: fullscreenImage && !cameraActive ? null : get().liveVerse,
       liveNotes: fullscreenImage ? null : get().liveNotes,
       isLive: fullscreenImage ? true : get().isLive,
     })
@@ -160,15 +232,103 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
   },
   liveNotes: null,
   setLiveNotes: (liveNotes) => {
+    const cameraActive = get().cameraActive
     set({
       liveNotes,
-      liveVerse: liveNotes ? null : get().liveVerse,
+      liveVerse: liveNotes && !cameraActive ? null : get().liveVerse,
       fullscreenImage: liveNotes ? null : get().fullscreenImage,
       blankLogo: liveNotes ? false : get().blankLogo,
       isLive: liveNotes ? true : get().isLive,
     })
     get().syncBroadcastOutput()
   },
+  startCamera: (config) => {
+    const settings = useSettingsStore.getState()
+    const source = config?.source ?? settings.cameraSource
+    if (!source) {
+      set({
+        cameraConnection: "error",
+        cameraError: "Choose a camera source first.",
+      })
+      return
+    }
+    const next = {
+      source,
+      fit: config?.fit ?? settings.cameraFit,
+      mirrored: config?.mirrored ?? settings.cameraMirrored,
+      lowerThirdThemeId:
+        config?.lowerThirdThemeId ?? settings.lowerThirdThemeId,
+    }
+    set({
+      cameraActive: true,
+      cameraSource: next.source,
+      cameraFit: next.fit,
+      cameraMirrored: next.mirrored,
+      lowerThirdThemeId: next.lowerThirdThemeId,
+      cameraConnection: "connecting",
+      cameraError: null,
+      blankLogo: false,
+      fullscreenImage: null,
+      liveNotes: null,
+      isLive: true,
+    })
+    void persistCameraPreferences(next)
+    const idx = get().projectorMonitorIndex ?? 0
+    void invoke("open_broadcast_window", {
+      outputId: "main",
+      monitorIndex: idx,
+    })
+      .then(() => {
+        get().syncBroadcastOutputFor("main")
+        for (const delay of [150, 400, 900]) {
+          setTimeout(() => get().syncBroadcastOutputFor("main"), delay)
+        }
+      })
+      .catch((error) => {
+        set({ cameraConnection: "error", cameraError: String(error) })
+      })
+  },
+  configureCamera: (config) => {
+    const current = get().cameraSource
+    const sourceChanged =
+      !current || JSON.stringify(current) !== JSON.stringify(config.source)
+    set({
+      cameraSource: config.source,
+      cameraFit: config.fit,
+      cameraMirrored: config.mirrored,
+      lowerThirdThemeId: config.lowerThirdThemeId,
+      cameraConnection: sourceChanged ? "connecting" : get().cameraConnection,
+      cameraError: sourceChanged ? null : get().cameraError,
+    })
+    void persistCameraPreferences(config)
+    if (get().cameraActive) get().syncBroadcastOutputFor("main")
+  },
+  stopCamera: () => {
+    const state = get()
+    const hasContent = Boolean(
+      state.liveVerse ||
+      state.fullscreenImage ||
+      state.blankLogo ||
+      state.liveNotes
+    )
+    set({
+      cameraActive: false,
+      cameraConnection: "idle",
+      cameraError: null,
+      programPreviewUrl: null,
+      isLive: hasContent,
+    })
+    get().syncBroadcastOutputFor("main")
+    void invoke("stop_ndi_input").catch(() => {})
+    if (!hasContent) {
+      void invoke("close_broadcast_window", { outputId: "main" }).catch(
+        () => {}
+      )
+    }
+  },
+  setCameraStatus: (cameraConnection, cameraError = null) =>
+    set({ cameraConnection, cameraError }),
+  setProgramPreviewUrl: (programPreviewUrl) => set({ programPreviewUrl }),
 
   loadThemes: () => {
     set({ themes: [...BUILTIN_THEMES] })
@@ -186,10 +346,15 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
         themeJson: JSON.stringify(theme),
       }).catch((err) => console.warn("[broadcast-store]", err))
     }
+    if (theme.id === get().lowerThirdThemeId && get().cameraActive) {
+      get().syncBroadcastOutputFor("main")
+    }
   },
   deleteTheme: (id) => {
     set((s) => ({ themes: s.themes.filter((t) => t.id !== id || t.builtin) }))
-    invoke("delete_custom_theme", { id }).catch((err) => console.warn("[broadcast-store]", err))
+    invoke("delete_custom_theme", { id }).catch((err) =>
+      console.warn("[broadcast-store]", err)
+    )
   },
   duplicateTheme: (id) => {
     const s = get()
@@ -220,7 +385,18 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
     // Use plain `emit` instead of `emitTo(label, ...)` — Tauri v2 has known
     // reliability issues with label-targeted emits (tauri-apps/tauri#11379).
     // Broadcast windows filter by outputId in the payload instead.
-    const blankLogoUrl = resolveBrandAsset("blank", useSettingsStore.getState().brand.blankImagePath)
+    const blankLogoUrl = resolveBrandAsset(
+      "blank",
+      useSettingsStore.getState().brand.blankImagePath
+    )
+    const brand = useSettingsStore.getState().brand
+
+    const lowerThirdTheme =
+      s.themes.find(
+        (candidate) =>
+          candidate.id === s.lowerThirdThemeId &&
+          candidate.kind === "lower-third"
+      ) ?? s.themes.find((candidate) => candidate.kind === "lower-third")
 
     void emit(`broadcast:verse-update:${outputId}`, {
       theme,
@@ -229,6 +405,21 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
       blankLogoUrl,
       fullscreenImage: s.fullscreenImage,
       notes: s.liveNotes,
+      camera:
+        outputId === "main" &&
+        s.cameraActive &&
+        s.cameraSource &&
+        lowerThirdTheme
+          ? {
+              active: true,
+              source: s.cameraSource,
+              fit: s.cameraFit,
+              mirrored: s.cameraMirrored,
+              lowerThirdTheme,
+              churchName: brand.churchName?.trim() ?? "",
+              logoUrl: resolveBrandAsset("logo", brand.logoPath),
+            }
+          : undefined,
     }).catch((err) => console.warn("[broadcast-store]", err))
   },
   syncBroadcastOutput: () => {
@@ -254,7 +445,7 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
   setLiveVerse: (liveVerse) => {
     set({
       liveVerse,
-      isLive: liveVerse !== null,
+      isLive: liveVerse !== null || get().cameraActive,
       blankLogo: false,
       fullscreenImage: liveVerse ? null : get().fullscreenImage,
       liveNotes: liveVerse ? null : get().liveNotes,
@@ -274,9 +465,7 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
           void import("@/stores/queue-store").then(({ useQueueStore }) => {
             const q = useQueueStore.getState()
             const exists = q.items.some(
-              (it) =>
-                it.kind === "verse" &&
-                sameVerseIdentity(it.verse, sel),
+              (it) => it.kind === "verse" && sameVerseIdentity(it.verse, sel)
             )
             if (exists) return
             q.addItem({
@@ -307,7 +496,9 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
           verseRef,
           verseText,
           translation,
-        }).catch((e) => console.warn("[broadcast-store] record_presented_verse failed:", e))
+        }).catch((e) =>
+          console.warn("[broadcast-store] record_presented_verse failed:", e)
+        )
       }
     }
     get().syncBroadcastOutput()
@@ -315,7 +506,9 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
   addToHistory: (verse) => {
     const { history } = get()
     if (history[0]?.verse.reference === verse.reference) return
-    set({ history: [{ verse, presentedAt: Date.now() }, ...history].slice(0, 50) })
+    set({
+      history: [{ verse, presentedAt: Date.now() }, ...history].slice(0, 50),
+    })
   },
   goLive: () => {
     const { projectorMonitorIndex } = get()
@@ -325,7 +518,10 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
       .then((isOpen) => {
         if (isOpen) return
         const idx = projectorMonitorIndex ?? 0
-        return invoke("open_broadcast_window", { outputId: "main", monitorIndex: idx })
+        return invoke("open_broadcast_window", {
+          outputId: "main",
+          monitorIndex: idx,
+        })
       })
       .catch((err) => console.warn("[broadcast-store]", err))
 
@@ -336,16 +532,36 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
     }
   },
   clearScreen: () => {
-    set({ liveVerse: null, isLive: false, blankLogo: false, fullscreenImage: null, liveNotes: null })
+    if (get().cameraActive) {
+      set({
+        liveVerse: null,
+        isLive: true,
+      })
+      get().syncBroadcastOutput()
+      return
+    }
+    set({
+      liveVerse: null,
+      isLive: false,
+      blankLogo: false,
+      fullscreenImage: null,
+      liveNotes: null,
+    })
     get().syncBroadcastOutput()
-    invoke("close_broadcast_window", { outputId: "main" }).catch((err) => console.warn("[broadcast-store]", err))
+    invoke("close_broadcast_window", { outputId: "main" }).catch((err) =>
+      console.warn("[broadcast-store]", err)
+    )
   },
   showProjector: () => {
     const idx = get().projectorMonitorIndex ?? 0
     // If projector is reopening after a Kill (nothing live), default to the
     // blank EWC-logo screen so the audience sees branding, not a black void.
     const s = get()
-    const hasContent = s.liveVerse !== null || s.fullscreenImage !== null || s.blankLogo
+    const hasContent =
+      s.cameraActive ||
+      s.liveVerse !== null ||
+      s.fullscreenImage !== null ||
+      s.blankLogo
     if (!hasContent) {
       set({ blankLogo: true, isLive: true })
     }
@@ -355,7 +571,10 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
           get().syncBroadcastOutput()
           return
         }
-        return invoke("open_broadcast_window", { outputId: "main", monitorIndex: idx }).then(() => {
+        return invoke("open_broadcast_window", {
+          outputId: "main",
+          monitorIndex: idx,
+        }).then(() => {
           // Fresh window: listener registers AFTER React mount. Emit on a
           // short burst so the verse-update event lands once the listener is
           // attached. Without this the projector opens black despite our
@@ -372,7 +591,12 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
   // Designer
   setDesignerOpen: (isDesignerOpen) => {
     if (!isDesignerOpen) {
-      set({ isDesignerOpen, editingThemeId: null, draftTheme: null, selectedElement: null })
+      set({
+        isDesignerOpen,
+        editingThemeId: null,
+        draftTheme: null,
+        selectedElement: null,
+      })
     } else {
       set({ isDesignerOpen })
     }
@@ -388,12 +612,21 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
   },
   updateDraft: (updates) =>
     set((s) => ({
-      draftTheme: s.draftTheme ? { ...s.draftTheme, ...updates, updatedAt: Date.now() } : null,
+      draftTheme: s.draftTheme
+        ? { ...s.draftTheme, ...updates, updatedAt: Date.now() }
+        : null,
     })),
   updateDraftNested: (path, value) =>
     set((s) => ({
       draftTheme: s.draftTheme
-        ? { ...setNestedValue(s.draftTheme as unknown as Record<string, unknown>, path, value), updatedAt: Date.now() } as BroadcastTheme
+        ? ({
+            ...setNestedValue(
+              s.draftTheme as unknown as Record<string, unknown>,
+              path,
+              value
+            ),
+            updatedAt: Date.now(),
+          } as BroadcastTheme)
         : null,
     })),
   saveDraft: () => {
@@ -414,10 +647,22 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
         themes: s.themes.some((theme) => theme.id === customTheme.id)
           ? s.themes
           : [...s.themes, customTheme],
-        activeThemeId: customTheme.id,
+        activeThemeId:
+          customTheme.kind === "lower-third" ? s.activeThemeId : customTheme.id,
         editingThemeId: customTheme.id,
         draftTheme: customTheme,
       }))
+      if (customTheme.kind === "lower-third") {
+        const settings = useSettingsStore.getState()
+        set({ lowerThirdThemeId: customTheme.id })
+        void persistCameraPreferences({
+          source: settings.cameraSource,
+          fit: settings.cameraFit,
+          mirrored: settings.cameraMirrored,
+          lowerThirdThemeId: customTheme.id,
+        })
+        get().syncBroadcastOutputFor("main")
+      }
     } else {
       get().saveTheme(draftTheme)
     }
@@ -433,7 +678,9 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
   // Announcements
   announcement: null,
   sendAnnouncement: (announcement) => {
-    const expiresAt = announcement.duration ? Date.now() + announcement.duration * 1000 : null
+    const expiresAt = announcement.duration
+      ? Date.now() + announcement.duration * 1000
+      : null
     const full = {
       ...announcement,
       expiresAt,
@@ -441,9 +688,15 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
       paused: false,
     }
     set({ announcement: full })
-    invoke("ensure_broadcast_window", { outputId: "main" }).catch((err) => console.warn("[broadcast-store]", err))
-    void emit("broadcast:announcement:main", announcement).catch((err) => console.warn("[broadcast-store]", err))
-    void emit("broadcast:announcement:alt", announcement).catch((err) => console.warn("[broadcast-store]", err))
+    invoke("ensure_broadcast_window", { outputId: "main" }).catch((err) =>
+      console.warn("[broadcast-store]", err)
+    )
+    void emit("broadcast:announcement:main", announcement).catch((err) =>
+      console.warn("[broadcast-store]", err)
+    )
+    void emit("broadcast:announcement:alt", announcement).catch((err) =>
+      console.warn("[broadcast-store]", err)
+    )
     scheduleAnnouncementExpiry(get, set)
   },
   pauseAnnouncement: () => {
@@ -453,8 +706,18 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
     set({ announcement: { ...a, paused: true, remainingMs, expiresAt: null } })
     clearAnnouncementTimer()
     // Tell broadcast output to freeze the ticker scroll.
-    void emit("broadcast:announcement:main", { ...a, paused: true, remainingMs, expiresAt: null }).catch(() => {})
-    void emit("broadcast:announcement:alt", { ...a, paused: true, remainingMs, expiresAt: null }).catch(() => {})
+    void emit("broadcast:announcement:main", {
+      ...a,
+      paused: true,
+      remainingMs,
+      expiresAt: null,
+    }).catch(() => {})
+    void emit("broadcast:announcement:alt", {
+      ...a,
+      paused: true,
+      remainingMs,
+      expiresAt: null,
+    }).catch(() => {})
   },
   resumeAnnouncement: () => {
     const a = get().announcement
@@ -462,15 +725,29 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
     const remainingMs = a.remainingMs ?? 0
     const expiresAt = remainingMs > 0 ? Date.now() + remainingMs : null
     set({ announcement: { ...a, paused: false, expiresAt, remainingMs: null } })
-    void emit("broadcast:announcement:main", { ...a, paused: false, expiresAt, remainingMs: null }).catch(() => {})
-    void emit("broadcast:announcement:alt", { ...a, paused: false, expiresAt, remainingMs: null }).catch(() => {})
+    void emit("broadcast:announcement:main", {
+      ...a,
+      paused: false,
+      expiresAt,
+      remainingMs: null,
+    }).catch(() => {})
+    void emit("broadcast:announcement:alt", {
+      ...a,
+      paused: false,
+      expiresAt,
+      remainingMs: null,
+    }).catch(() => {})
     scheduleAnnouncementExpiry(get, set)
   },
   dismissAnnouncement: () => {
     clearAnnouncementTimer()
     set({ announcement: null })
-    void emit("broadcast:announcement:main", null).catch((err) => console.warn("[broadcast-store]", err))
-    void emit("broadcast:announcement:alt", null).catch((err) => console.warn("[broadcast-store]", err))
+    void emit("broadcast:announcement:main", null).catch((err) =>
+      console.warn("[broadcast-store]", err)
+    )
+    void emit("broadcast:announcement:alt", null).catch((err) =>
+      console.warn("[broadcast-store]", err)
+    )
   },
 }))
 
@@ -487,7 +764,7 @@ function clearAnnouncementTimer() {
 
 function scheduleAnnouncementExpiry(
   get: () => BroadcastState,
-  _set: (partial: Partial<BroadcastState>) => void,
+  _set: (partial: Partial<BroadcastState>) => void
 ) {
   clearAnnouncementTimer()
   const a = get().announcement
@@ -508,21 +785,25 @@ function scheduleAnnouncementExpiry(
 
 export async function hydrateCustomThemes(): Promise<void> {
   try {
-    const rows = await invoke<Array<[string, string, string]>>("list_custom_themes")
+    const rows =
+      await invoke<Array<[string, string, string]>>("list_custom_themes")
     const customThemes: BroadcastTheme[] = []
     for (const [id, _name, json] of rows) {
       try {
-        customThemes.push(JSON.parse(json) as BroadcastTheme)
+        const parsed = JSON.parse(json) as BroadcastTheme
+        customThemes.push({ ...parsed, kind: parsed.kind ?? "slide" })
       } catch (err) {
         console.warn("[themes] dropping corrupt row", id, err)
       }
     }
     if (customThemes.length > 0) {
       const { themes } = useBroadcastStore.getState()
-      const builtinIds = new Set(themes.filter(t => t.builtin).map(t => t.id))
+      const builtinIds = new Set(
+        themes.filter((t) => t.builtin).map((t) => t.id)
+      )
       const merged = [
-        ...themes.filter(t => t.builtin),
-        ...customThemes.filter(t => !builtinIds.has(t.id)),
+        ...themes.filter((t) => t.builtin),
+        ...customThemes.filter((t) => !builtinIds.has(t.id)),
       ]
       useBroadcastStore.setState({ themes: merged })
     }

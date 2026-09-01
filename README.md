@@ -2,9 +2,9 @@
 
 Real-time AI-powered Bible verse detection for live sermons and broadcasts. A Tauri v2 desktop app with a React frontend and Rust backend.
 
-Manna listens to a live sermon audio feed, transcribes speech in real time, detects Bible verse references (both explicit citations and quoted passages), and renders them as broadcast-ready overlays via NDI for live production.
+Manna listens to a live sermon audio feed, transcribes speech in real time, detects Bible verse references (both explicit citations and quoted passages), and renders them to a projector or NDI program feed. The main output can also combine a local camera, capture card, or NDI video source with responsive Bible and song-lyric lower thirds.
 
-> Manna is a friendly fork of [openbezal/rhema](https://github.com/openbezal/rhema), extended for church livestream workflows: multi-provider STT, service plan + session management, AI sermon summaries + live notes, image search → projection, and an API-key verifier.
+> Manna is a friendly fork of [openbezal/rhema](https://github.com/openbezal/rhema), extended for church livestream workflows: multi-provider STT, service plan + session management, camera composition, editable lower thirds, song presentation, AI sermon summaries + live notes, image search → projection, and an API-key verifier.
 
 ---
 
@@ -54,11 +54,18 @@ Rhema ships a fixed 4-column CSS grid with 6 hardcoded panels. Manna replaces th
 
 ### Projection pipeline
 
+- **Main-output camera mode** — use a webcam, HDMI/USB capture card, or discovered NDI source as the program background. Controls include source preview, crop-to-fill/contain, mirroring, connection status, and explicit Start/Stop actions.
+- **Camera-aware output controls** — Clear Output becomes **Clear Verse** while camera mode is active, so the video remains live. Full-screen images, notes, blank screens, and slide announcements temporarily take over and reveal the camera again when dismissed. Alternate output remains independent.
+- **Lower-third theme system** — three canvas presets plus ten built-in HTML/CSS templates. Long content auto-fits, text boxes grow with the content, active tickers lift the lower third, gradients render as real gradients, and the church logo remains available as a persistent program layer.
+- **Scripture/song awareness** — song stanzas are tagged separately from Bible verses, so HTML lower thirds use song labels and suppress translation-only metadata instead of presenting lyrics as scripture.
+- **Custom HTML templates** — import a static `.html` file, duplicate/edit it in Theme Designer, use syntax highlighting and Prettier formatting, then select it from Camera Input. See the [HTML lower-third specification](docs/html-lower-third-spec.md) for placeholders, conditional classes, safety restrictions, and a starter template.
+- **Program preview** — the operator monitor receives a low-rate compressed preview of the composited camera program without opening a second local-camera stream.
 - **Image search → live** — Pexels, Unsplash, Brave image providers; `presentImageLive` pipes selection straight to `setFullscreenImage` on the broadcast store
-- **Default-to-blank projector boot** — EWC logo screen on session start, no black void
+- **Default-to-blank projector boot** — branded logo screen on session start, no black void
 - **Projector picker** w/ proportional monitor arrangement view
 - **Custom image upload** on blank-slide plan items (file picker → embedded URL)
-- **Announcement runtime** — ticker (RAF marquee at the bottom; current slide stays visible) or slide (full takeover). Pause/Resume/Dismiss + countdown chips on the broadcast monitor header and on the active plan item.
+- **Announcement runtime** — ticker (continuous right-edge-to-left-edge RAF marquee; current program stays visible) or slide (full takeover). Pause/Resume/Dismiss + countdown chips on the broadcast monitor header and on the active plan item.
+- **Verse motion** — subtle enter/exit movement and fading in both camera lower-thirds and normal slide mode.
 
 ### AI / summaries
 
@@ -80,27 +87,27 @@ Rhema ships a fixed 4-column CSS grid with 6 hardcoded panels. Manna replaces th
 
 ## Tech Stack
 
-| Layer | Technologies |
-|---|---|
-| **Frontend** | React 19, TypeScript, Tailwind CSS v4, shadcn/ui, Vaul (drawers), Sonner (toasts), Zustand, Vite 7 |
-| **Backend** | Tauri v2, Rust (workspace with 7 crates) |
-| **AI / ML** | ONNX Runtime (Qwen3-0.6B embeddings), Aho-Corasick, Fuse.js, MiniSearch, **DeepSeek** (sermon summaries + live notes — OpenAI-compatible, `deepseek-chat` / `deepseek-reasoner` fallback) |
-| **Database** | SQLite via rusqlite (bundled) with FTS5 |
-| **Broadcast** | NDI 6 SDK via dynamic loading (libloading FFI) |
-| **STT** | Deepgram + AssemblyAI (WebSocket via tokio-tungstenite, shared ws_runtime), Whisper (local, `ggml-large-v3-turbo`) |
-| **Image search** | Pexels, Unsplash, Brave Search Image API |
+| Layer            | Technologies                                                                                                                                                                              |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Frontend**     | React 19, TypeScript, Tailwind CSS v4, shadcn/ui, Vaul (drawers), Sonner (toasts), Zustand, Vite 7                                                                                        |
+| **Backend**      | Tauri v2, Rust (workspace with 7 crates)                                                                                                                                                  |
+| **AI / ML**      | ONNX Runtime (Qwen3-0.6B embeddings), Aho-Corasick, Fuse.js, MiniSearch, **DeepSeek** (sermon summaries + live notes — OpenAI-compatible, `deepseek-chat` / `deepseek-reasoner` fallback) |
+| **Database**     | SQLite via rusqlite (bundled) with FTS5                                                                                                                                                   |
+| **Broadcast**    | Canvas 2D composition, MediaDevices camera capture, NDI 6 input/output via dynamically loaded FFI                                                                                         |
+| **STT**          | Deepgram + AssemblyAI (WebSocket via tokio-tungstenite, shared ws_runtime), Whisper (local, `ggml-large-v3-turbo`)                                                                        |
+| **Image search** | Pexels, Unsplash, Brave Search Image API                                                                                                                                                  |
 
 ### Rust crates
 
-| Crate | Purpose |
-|---|---|
-| `rhema-audio` | Audio device enumeration, capture, VAD (cpal) |
-| `rhema-stt` | STT providers (Deepgram, AssemblyAI, Whisper) + shared WebSocket runtime |
-| `rhema-bible` | SQLite Bible DB, FTS5 search, cross-references |
+| Crate             | Purpose                                                                                                               |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `rhema-audio`     | Audio device enumeration, capture, VAD (cpal)                                                                         |
+| `rhema-stt`       | STT providers (Deepgram, AssemblyAI, Whisper) + shared WebSocket runtime                                              |
+| `rhema-bible`     | SQLite Bible DB, FTS5 search, cross-references                                                                        |
 | `rhema-detection` | Verse detection pipeline: direct, semantic, quotation, ensemble merger, sentence buffer, sermon context, reading mode |
-| `rhema-broadcast` | NDI video frame output via FFI |
-| `rhema-api` | Tauri command API layer |
-| `rhema-notes` | Session notes + sermon-notes types |
+| `rhema-broadcast` | Shared-lifetime NDI SDK loader, source discovery, video receiver, and binary program-frame output                     |
+| `rhema-api`       | Tauri command API layer                                                                                               |
+| `rhema-notes`     | Session notes + sermon-notes types                                                                                    |
 
 > Crate names still carry the `rhema-` prefix upstream; the app's package name and bundle identifier are `manna`.
 
@@ -109,7 +116,8 @@ Rhema ships a fixed 4-column CSS grid with 6 hardcoded panels. Manna replaces th
 ## Prerequisites
 
 - [Bun](https://bun.sh/) — runtime for scripts + package manager
-- [Rust](https://rustup.rs/) toolchain (stable, 1.77.2+)
+- [Rust](https://rustup.rs/) toolchain (stable, 1.85+)
+- [CMake](https://cmake.org/) — required to build the local Whisper backend
 - [Tauri v2 prerequisites](https://v2.tauri.app/start/prerequisites/) — platform-specific system deps
 - [Python 3.11+](https://www.python.org/) — managed automatically by Phase 1 of any setup recipe
 - **One STT provider**:
@@ -134,30 +142,30 @@ Rhema ships a fixed 4-column CSS grid with 6 hardcoded panels. Manna replaces th
 ## Getting Started
 
 ```bash
-git clone https://github.com/<your-fork>/manna.git
-cd manna
+git clone https://github.com/uxderrick/Manna.git
+cd Manna
 bun install
 ```
 
 ### Which setup do I need?
 
-| Scenario | Recipe | Time | Disk |
-|----------|--------|------|------|
-| Church PC (no GPU) | `bun run setup:minimal` | ~10 min | 2 GB |
-| Mac M1/M2/M3 (MPS) | `bun run setup:all` | ~45 min | 6 GB |
-| Linux + NVIDIA | `bun run setup:all` | ~30 min | 6 GB |
+| Scenario             | Recipe                  | Time    | Disk |
+| -------------------- | ----------------------- | ------- | ---- |
+| Church PC (no GPU)   | `bun run setup:minimal` | ~10 min | 2 GB |
+| Mac M1/M2/M3 (MPS)   | `bun run setup:all`     | ~45 min | 6 GB |
+| Linux + NVIDIA       | `bun run setup:all`     | ~30 min | 6 GB |
 | CI / quick dev check | `bun run setup:minimal` | ~10 min | 2 GB |
 
 ### What each setup gives you
 
-| Feature | minimal | + semantic | + whisper |
-|---------|---------|-----------|-----------|
-| Bible lookup (search, nav) | ✓ | ✓ | ✓ |
-| Direct reference detection ("John 3:16") | ✓ | ✓ | ✓ |
-| Quotation detection (exact KJV wording) | ✓ | ✓ | ✓ |
-| Semantic detection (paraphrase, loose quotes) | — | ✓ | ✓ |
-| Cloud STT (Deepgram, AssemblyAI) | ✓ | ✓ | ✓ |
-| Local Whisper STT (offline, free) | — | — | ✓ |
+| Feature                                       | minimal | + semantic | + whisper |
+| --------------------------------------------- | ------- | ---------- | --------- |
+| Bible lookup (search, nav)                    | ✓       | ✓          | ✓         |
+| Direct reference detection ("John 3:16")      | ✓       | ✓          | ✓         |
+| Quotation detection (exact KJV wording)       | ✓       | ✓          | ✓         |
+| Semantic detection (paraphrase, loose quotes) | —       | ✓          | ✓         |
+| Cloud STT (Deepgram, AssemblyAI)              | ✓       | ✓          | ✓         |
+| Local Whisper STT (offline, free)             | —       | —          | ✓         |
 
 ### Minimal install (~10 min)
 
@@ -213,11 +221,15 @@ Keys can also be entered in **Settings → API Keys** inside the app and verifie
 
 ### NDI SDK (optional)
 
-For broadcast output via NDI:
+Required for NDI input or output. The command downloads the headers and platform runtimes into the gitignored `sdk/ndi/` directory:
 
 ```bash
 bun run download:ndi-sdk
 ```
+
+In development, the Rust loader reads the runtime directly from `sdk/ndi/<platform>/`. A working NDI feed in `tauri dev` therefore confirms that the local SDK exists, but not that an installer contains it.
+
+> **Packaging note:** the current Tauri flavor files do not yet include the NDI runtime as a bundled resource, and the loader currently resolves it from the repository. Before distributing an installer to another computer, add the platform library to the Tauri resource bundle and resolve it from `resource_dir`; otherwise NDI may be unavailable outside the build workspace.
 
 ### Run in development
 
@@ -225,26 +237,62 @@ bun run download:ndi-sdk
 bun run tauri dev
 ```
 
+Development defaults to the `minimal` flavor marker, but it compiles Cargo's default ONNX and Whisper features and falls back to files in the project root. If models, embeddings, Whisper, or the NDI SDK already exist locally, the dev app will use them. Running `tauri dev` does not run `setup:minimal` or `setup:all`; setup recipes only create/download resources.
+
 ### Build for production
 
+Use a flavor configuration so the required runtime data is embedded in the installer:
+
+| Flavor    | Bundled resources                                                      | Intended use                                     |
+| --------- | ---------------------------------------------------------------------- | ------------------------------------------------ |
+| `minimal` | Bible database                                                         | Direct/quotation detection with cloud STT        |
+| `context` | Bible database, INT8 Qwen tokenizer/model, KJV embeddings              | Semantic/context detection without local Whisper |
+| `full`    | Bible database, FP32 + INT8 Qwen assets, KJV embeddings, Whisper model | All local capabilities; largest installer        |
+
+macOS DMG:
+
 ```bash
-bun run tauri build
+MANNA_FLAVOR=minimal bun run tauri build --bundles dmg --config src-tauri/tauri.conf.minimal.json
+```
+
+The installer is written to `src-tauri/target/release/bundle/dmg/`.
+
+For another flavor, first create its resources, then change both occurrences of the flavor name:
+
+```bash
+bun run setup:all
+MANNA_FLAVOR=full bun run tauri build --bundles dmg --config src-tauri/tauri.conf.full.json
+```
+
+Windows NSIS installer (run on Windows; MSI does not accept the current prerelease version):
+
+```powershell
+$env:MANNA_FLAVOR="minimal"
+bun run tauri build --bundles nsis --config src-tauri/tauri.conf.minimal.json -- --no-default-features
+```
+
+The installer is written to `src-tauri/target/release/bundle/nsis/`. Local builds are unsigned; see [Release installation notes](docs/RELEASE.md#user-facing-install-docs) for macOS Gatekeeper and Windows SmartScreen guidance.
+
+For a quick frontend production bundle without compiling the native application, use:
+
+```bash
+bun run build
 ```
 
 ### Advanced: running individual phases
 
 The orchestrator accepts a `--phases=<csv>` flag. Valid phase ids:
 
-| Phase | id | What it does |
-|-------|----|---|
-| 1 | `venv` | Python `.venv` + pip deps |
-| 2 | `bible-data` | Download scrollmapper + cross-refs |
-| 3 | `biblegateway` | Download copyrighted translations (NIV, ESV, etc.) |
-| 4 | `build-db` | Build `data/rhema.db` (SQLite + FTS5) |
-| 5 | `onnx` | Download + quantize Qwen3 ONNX model |
-| 6 | `export-verses` | Export KJV verses → JSON |
-| 7 | `precompute` | Compute KJV embeddings (GPU required) |
-| 8 | `whisper` | Download Whisper STT model |
+| Phase | id              | What it does                                       |
+| ----- | --------------- | -------------------------------------------------- |
+| 1     | `venv`          | Python `.venv` + pip deps                          |
+| 2     | `bible-data`    | Download scrollmapper + cross-refs                 |
+| 3     | `biblegateway`  | Download copyrighted translations (NIV, ESV, etc.) |
+| 4     | `build-db`      | Build `data/rhema.db` (SQLite + FTS5)              |
+| 5     | `onnx`          | Download + quantize Qwen3 ONNX model               |
+| 6     | `export-verses` | Export KJV verses → JSON                           |
+| 7     | `precompute`    | Compute KJV embeddings (GPU required)              |
+| 8     | `whisper`       | Download Whisper STT model                         |
 
 ```bash
 bun run setup:all --phases=venv,bible-data,build-db
@@ -266,6 +314,8 @@ Individual legacy scripts (`download:bible-data`, `build:bible`, `download:model
 4. **Settings → Bible** — set the active translation.
 5. **Settings → Display Mode** — choose manual vs auto-broadcast, set the confidence threshold and cooldown.
 6. **Settings → Hymnals** — toggle which hymnal sources are seeded into the local song DB.
+7. **Settings → Branding** — set the church name and logo used by blank screens and camera programs.
+8. Open **Theme Designer** to choose or customize normal slide themes and camera lower thirds. HTML lower thirds can be imported from the theme library.
 
 ### During the service
 
@@ -282,6 +332,29 @@ Individual legacy scripts (`download:bible-data`, `build:bible`, `download:model
 8. **Announcements** — ticker (scrolling bottom band) or full slide; pause/resume/dismiss inline.
 9. Verses that cross the 99% threshold are auto-added to the **History** tab; presented verses are persisted to the session.
 
+### Camera and lower-thirds workflow
+
+1. Open the **Broadcast Monitor**, then select **Camera**.
+2. Choose **Local device** for a webcam/capture card or **NDI** for a discovered network source. Refresh discovery if the device was connected after opening the drawer.
+3. Select crop-to-fill or contain, toggle mirroring if needed, choose a lower-third theme, and click **Start Camera**. Camera activation is intentionally not restored after an app restart.
+4. Present a Bible verse or song stanza normally. The camera stays behind the lower third; song lyrics receive song-specific labels while scripture keeps its translation metadata.
+5. Use **Clear Verse** to remove only the lower third, or **Stop Camera** to end the video stream and release its tracks.
+
+The selected source identity, fit, mirroring, and lower-third theme are remembered. If a selected source disappears, Manna reports the error rather than silently switching to another camera. NDI source loss renders black behind any active lower third and keeps the selected source identity for reconnection.
+
+Camera composition applies only to the main output. The program priority is: slide announcement → full-screen image/notes/blank → camera with optional verse or lyrics → normal themed slide/black.
+
+On macOS, allow camera access when prompted (`NSCameraUsageDescription` is included). On Windows, camera access must be enabled for desktop apps in Privacy settings. Device discovery may initially show generic labels until permission has been granted.
+
+### HTML lower thirds
+
+- Import a `.html` file from **Theme Designer → Import**. JavaScript, iframes, embedded objects, event handlers, `javascript:` URLs, external stylesheets, and CSS imports are removed.
+- Edit templates in the built-in syntax-highlighted HTML/CSS editor. Use **Format**, `Shift+Alt+F`, or `Ctrl/Cmd+Shift+F` to run Prettier; Tab inserts two spaces.
+- Templates can distinguish `scripture` from `song` through placeholders and root CSS classes. Translation-only elements can automatically disappear for lyrics.
+- Design for a transparent 1920×1080 canvas and add `data-manna-lower-third` to the moving overlay container so active tickers lift it automatically.
+
+See [docs/html-lower-third-spec.md](docs/html-lower-third-spec.md) and [public/templates/lower-third-example.html](public/templates/lower-third-example.html) for the complete contract and an importable example.
+
 ### After the service
 
 - **End Service** confirmation dialog → transcription stops, session is finalised, DeepSeek summary fires in the background, and Sessions Mode jumps to the new Summary tab.
@@ -297,7 +370,7 @@ Individual legacy scripts (`download:bible-data`, `build:bible`, `download:model
 manna/
 ├── src/                          # React frontend
 │   ├── components/
-│   │   ├── broadcast/            # Theme designer, broadcast monitor, announcement dialog, broadcast settings, projector picker
+│   │   ├── broadcast/            # Theme designer, camera input, HTML editor, broadcast monitor/settings, projector picker
 │   │   ├── controls/             # Transport bar
 │   │   ├── layout/               # Workspace, toolbar, sessions-landing
 │   │   ├── notes/                # Notes selection drawer
@@ -311,14 +384,13 @@ manna/
 │   │   ├── settings-dialog.tsx   # Settings UI (Audio, Speech, Bible, Display, Hymnals, Remote, API Keys, Help)
 │   │   ├── preflight-checklist.tsx
 │   │   └── ui/                   # shadcn/ui + custom (drawer, dialog, sidebar, command, sonner toaster, etc.)
-│   ├── broadcast-output.tsx      # Projector window — canvas renderer for verses / images / notes / blank / announcement
-│   ├── hooks/                    # useAudio, useTranscription, useDetection, useBible, useBroadcast, useServicePlan, useSession
+│   ├── broadcast-output.tsx      # Projector/program compositor — camera, lower thirds, slides, branding, ticker, NDI output
+│   ├── hooks/                    # useAudio, useTranscription, useDetection, useBible, useBroadcast, useCameraEvents, ...
 │   ├── stores/                   # Zustand stores (audio, transcript, bible, queue, detection, broadcast,
 │   │                             #                  settings, session, service-plan, song, panel-tabs, ...)
 │   ├── types/                    # TypeScript type definitions
-│   └── lib/                      # markdown-inline (React tree, no innerHTML), notes-renderer (Canvas 2D),
-│                                 # verse-renderer (Canvas 2D), context-search (Fuse.js), bible-chapters (canonical
-│                                 # chapter counts), start-service, ai-notes-scheduler, builtin-themes, ...
+│   └── lib/                      # Canvas renderers/composition, camera helpers, HTML lower-third sanitizer/renderer,
+│                                 # theme presets, context search, Bible helpers, session and AI-note utilities
 ├── src-tauri/                    # Rust backend (Tauri v2)
 │   ├── crates/
 │   │   ├── audio/                # Audio capture & metering (cpal)
@@ -333,11 +405,12 @@ manna/
 │   │   │   ├── direct/           # Aho-Corasick + fuzzy reference parsing
 │   │   │   ├── semantic/         # ONNX embeddings, HNSW index, cloud booster, ensemble
 │   │   │   └── reading_mode.rs   # Reading vs referencing classifier
-│   │   ├── broadcast/            # NDI output (FFI)
+│   │   ├── broadcast/            # NDI SDK lifetime, source discovery/input receiver, output sender (FFI)
 │   │   ├── api/                  # Tauri command API
 │   │   └── notes/                # Session + sermon note types
 │   ├── src/commands/             # Tauri command handlers
-│   └── tauri.conf.json
+│   ├── tauri.conf.json           # Shared/base Tauri configuration
+│   └── tauri.conf.*.json         # Minimal, context, and full resource overlays
 ├── data/                         # Bible data pipeline
 │   ├── prepare-embeddings.ts     # Unified setup orchestrator (bun run setup:all)
 │   ├── lib/python-env.ts         # Shared Python venv management utilities
@@ -351,7 +424,8 @@ manna/
 │   └── schema.sql                # Database schema
 ├── models/                       # ML models (gitignored)
 ├── embeddings/                   # Precomputed vectors (gitignored)
-├── sdk/ndi/                      # NDI SDK files (downloaded)
+├── sdk/ndi/                      # Downloaded NDI SDK headers/runtimes (gitignored)
+├── public/templates/             # Importable lower-third examples
 └── build/                        # Vite build output
 ```
 
@@ -359,29 +433,31 @@ manna/
 
 ## Scripts
 
-| Script | Description |
-|---|---|
-| `setup:minimal` | **Recommended first run** — Python venv + Bible data + DB + verse export (~10 min, no GPU) |
-| `setup:semantic` | Add ONNX model + KJV embedding precompute (~30–45 min, GPU required) |
-| `setup:whisper` | Add offline Whisper STT model (~3 min, 1 GB) |
-| `setup:all` | **Full setup** — all 8 phases (idempotent) |
-| `dev` | Start Vite dev server (port 3000) |
-| `tauri` | Run Tauri CLI commands (`bun run tauri dev` / `bun run tauri build`) |
-| `build` | TypeScript check + Vite production build |
-| `test` | Run Vitest tests |
-| `lint` | ESLint |
-| `format` | Prettier formatting |
-| `typecheck` | TypeScript type checking |
-| `preview` | Preview production build |
-| `download:bible-data` | Download public domain Bible translations + cross-references |
-| `build:bible` | Build SQLite Bible database from JSON sources |
-| `download:model` | Export Qwen3-Embedding-0.6B to ONNX + quantize to INT8 |
-| `export:verses` | Export KJV verses to JSON for embedding precomputation |
-| `precompute:embeddings` | Precompute embeddings via Rust ONNX binary |
-| `precompute:embeddings-onnx` | Precompute embeddings via Python ONNX Runtime |
-| `precompute:embeddings-py` | Precompute embeddings via Python sentence-transformers |
-| `quantize:model` | Quantize ONNX model to INT8 for ARM64 |
-| `download:ndi-sdk` | Download NDI 6 SDK headers and platform libraries |
+| Script                       | Description                                                                                |
+| ---------------------------- | ------------------------------------------------------------------------------------------ |
+| `setup:minimal`              | **Recommended first run** — Python venv + Bible data + DB + verse export (~10 min, no GPU) |
+| `setup:semantic`             | Add ONNX model + KJV embedding precompute (~30–45 min, GPU required)                       |
+| `setup:whisper`              | Add offline Whisper STT model (~3 min, 1 GB)                                               |
+| `setup:all`                  | **Full setup** — all 8 phases (idempotent)                                                 |
+| `dev`                        | Start Vite dev server (port 3000)                                                          |
+| `tauri`                      | Run Tauri CLI commands (`bun run tauri dev` / `bun run tauri build`)                       |
+| `build`                      | Vite production frontend build                                                             |
+| `build:typed`                | TypeScript project build followed by the Vite production build                             |
+| `test`                       | Run Vitest tests                                                                           |
+| `lint`                       | ESLint                                                                                     |
+| `format`                     | Prettier formatting                                                                        |
+| `typecheck`                  | TypeScript type checking                                                                   |
+| `preview`                    | Preview production build                                                                   |
+| `download:bible-data`        | Download public domain Bible translations + cross-references                               |
+| `build:bible`                | Build SQLite Bible database from JSON sources                                              |
+| `convert:twi`                | Convert the Twi Bible XML source into the normalized JSON format                           |
+| `download:model`             | Export Qwen3-Embedding-0.6B to ONNX + quantize to INT8                                     |
+| `export:verses`              | Export KJV verses to JSON for embedding precomputation                                     |
+| `precompute:embeddings`      | Precompute embeddings via Rust ONNX binary                                                 |
+| `precompute:embeddings-onnx` | Precompute embeddings via Python ONNX Runtime                                              |
+| `precompute:embeddings-py`   | Precompute embeddings via Python sentence-transformers                                     |
+| `quantize:model`             | Quantize ONNX model to INT8 for ARM64                                                      |
+| `download:ndi-sdk`           | Download NDI 6 SDK headers and platform libraries                                          |
 
 ---
 
@@ -389,15 +465,15 @@ manna/
 
 Create a `.env` file in the project root:
 
-| Variable | Required | Description |
-|---|---|---|
-| `DEEPGRAM_API_KEY` | One required (or Whisper) | Deepgram speech-to-text |
-| `ASSEMBLYAI_API_KEY` | One required (or Whisper) | AssemblyAI speech-to-text |
-| `DEEPSEEK_API_KEY` | Optional | AI sermon summary on session end + live "Generate points" notes |
-| `PEXELS_API_KEY` | Optional | Image search → live projection |
-| `UNSPLASH_API_KEY` | Optional | Image search alternative |
-| `BRAVE_API_KEY` | Optional | Image search alternative |
-| `GENIUS_API_KEY` | Optional | Song lookup |
+| Variable             | Required                  | Description                                                     |
+| -------------------- | ------------------------- | --------------------------------------------------------------- |
+| `DEEPGRAM_API_KEY`   | One required (or Whisper) | Deepgram speech-to-text                                         |
+| `ASSEMBLYAI_API_KEY` | One required (or Whisper) | AssemblyAI speech-to-text                                       |
+| `DEEPSEEK_API_KEY`   | Optional                  | AI sermon summary on session end + live "Generate points" notes |
+| `PEXELS_API_KEY`     | Optional                  | Image search → live projection                                  |
+| `UNSPLASH_API_KEY`   | Optional                  | Image search alternative                                        |
+| `BRAVE_API_KEY`      | Optional                  | Image search alternative                                        |
+| `GENIUS_API_KEY`     | Optional                  | Song lookup                                                     |
 
 Keys pasted into **Settings → API Keys** are persisted via `tauri-plugin-store` and override the `.env` values.
 
@@ -405,26 +481,28 @@ Keys pasted into **Settings → API Keys** are persisted via `tauri-plugin-store
 
 ## Tauri commands (selected)
 
-| Command | Purpose |
-|---|---|
-| `start_transcription` / `stop_transcription` | Audio → STT → detection pipeline lifecycle |
-| `verify_deepgram_key` / `verify_assemblyai_key` / `verify_deepseek_key` | HTTP auth + WebSocket handshake probe for the given key |
-| `detect_verses` / `semantic_search` / `quotation_search` | Detection pipeline entry points |
-| `reading_mode_status` / `stop_reading_mode` | Reading-mode classifier controls |
-| `create_session` / `start_session` / `end_session` / `list_sessions` / `delete_session` | Session lifecycle |
-| `update_session_title` / `update_session_summary` | Session metadata |
-| `add_session_detection` / `record_presented_verse` / `get_session_detections` | Verse detection + "went on screen" recording |
-| `add_session_transcript` / `get_session_transcript` | Transcript persistence |
-| `add_session_note` / `update_session_note` / `get_session_notes` | Notes CRUD (manual + AI rows) |
-| `summarize_sermon` / `generate_live_notes` | DeepSeek-backed AI summaries + live "Generate points" |
-| `plan_get` / `plan_add_item` / `plan_update_item` / `plan_delete_item` / `plan_reorder_item` | Service plan CRUD |
-| `plan_list_templates` / `plan_save_template` / `plan_load_template_into_session` | Service plan templates |
-| `ensure_broadcast_window` / `open_broadcast_window` / `close_broadcast_window` / `is_broadcast_open` | Broadcast output window |
-| `list_monitors` / `primary_monitor` | Projector picker (monitor enumeration) |
-| `start_ndi` / `stop_ndi` / `get_ndi_status` / `push_ndi_frame` | NDI output |
-| `start_osc` / `start_http` / `update_remote_status` | Remote control (OSC + HTTP) |
-| `list_custom_themes` / `save_custom_theme` / `delete_custom_theme` | Theme designer persistence |
-| `seed_hymnal` / `list_songs` / `save_song` / `delete_song` | Songs + hymnal seeding |
+| Command                                                                                              | Purpose                                                 |
+| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `start_transcription` / `stop_transcription`                                                         | Audio → STT → detection pipeline lifecycle              |
+| `verify_deepgram_key` / `verify_assemblyai_key` / `verify_deepseek_key`                              | HTTP auth + WebSocket handshake probe for the given key |
+| `detect_verses` / `semantic_search` / `quotation_search`                                             | Detection pipeline entry points                         |
+| `reading_mode_status` / `stop_reading_mode`                                                          | Reading-mode classifier controls                        |
+| `create_session` / `start_session` / `end_session` / `list_sessions` / `delete_session`              | Session lifecycle                                       |
+| `update_session_title` / `update_session_summary`                                                    | Session metadata                                        |
+| `add_session_detection` / `record_presented_verse` / `get_session_detections`                        | Verse detection + "went on screen" recording            |
+| `add_session_transcript` / `get_session_transcript`                                                  | Transcript persistence                                  |
+| `add_session_note` / `update_session_note` / `get_session_notes`                                     | Notes CRUD (manual + AI rows)                           |
+| `summarize_sermon` / `generate_live_notes`                                                           | DeepSeek-backed AI summaries + live "Generate points"   |
+| `plan_get` / `plan_add_item` / `plan_update_item` / `plan_delete_item` / `plan_reorder_item`         | Service plan CRUD                                       |
+| `plan_list_templates` / `plan_save_template` / `plan_load_template_into_session`                     | Service plan templates                                  |
+| `ensure_broadcast_window` / `open_broadcast_window` / `close_broadcast_window` / `is_broadcast_open` | Broadcast output window                                 |
+| `list_monitors` / `primary_monitor`                                                                  | Projector picker (monitor enumeration)                  |
+| `start_ndi` / `stop_ndi` / `get_ndi_status` / `push_ndi_frame_binary`                                | NDI program output over bounded binary IPC              |
+| `list_ndi_sources` / `start_ndi_input` / `stop_ndi_input`                                            | NDI source discovery and receiver lifecycle             |
+| `get_ndi_input_status` / `pull_ndi_frame`                                                            | Receiver health and latest-frame-only binary transport  |
+| `start_osc` / `start_http` / `update_remote_status`                                                  | Remote control (OSC + HTTP)                             |
+| `list_custom_themes` / `save_custom_theme` / `delete_custom_theme`                                   | Theme designer persistence                              |
+| `seed_hymnal` / `list_songs` / `save_song` / `delete_song`                                           | Songs + hymnal seeding                                  |
 
 ---
 

@@ -303,6 +303,23 @@ mod tests {
     }
 
     #[test]
+    fn matches_asante_twi_quotation() {
+        let matcher = QuotationMatcher::build(vec![QuotationVerse {
+            id: 41_006_023,
+            book_number: 41,
+            book_name: "Mark".to_string(),
+            chapter: 6,
+            verse: 23,
+            text: "Herode de ntam ka kyerɛɛ ababaa no se bisa me biribiara a wopɛ".to_string(),
+        }]);
+        let results = matcher.match_transcript(
+            "Herode de ntam ka kyerɛɛ ababaa no se bisa me biribiara a wopɛ",
+        );
+        assert_eq!(results[0].verse_ref.book_name, "Mark");
+        assert_eq!(results[0].verse_ref.verse_start, 23);
+    }
+
+    #[test]
     fn test_empty_index() {
         let matcher = QuotationMatcher::new();
         assert!(!matcher.is_ready());

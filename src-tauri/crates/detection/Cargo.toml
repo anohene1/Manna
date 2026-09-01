@@ -19,7 +19,7 @@ rhema-bible = { path = "../bible" }
 ort = { version = "2.0.0-rc.12", optional = true, features = ["half"] }
 half = { version = "2", optional = true }
 ndarray = { version = "0.16", optional = true }
-tokenizers = { version = "0.22", optional = true }
+tokenizers = { version = "0.22", optional = true, default-features = false, features = ["onig", "progressbar"] }
 bytemuck = { version = "1", features = ["derive"], optional = true }
 
 # Dependencies only needed by the precompute binary

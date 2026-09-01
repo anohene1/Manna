@@ -256,7 +256,7 @@ export function SessionsLanding() {
         aria-hidden
         className="pointer-events-none fixed inset-0 -z-10 opacity-[0.06] [filter:invert(1)] dark:opacity-[0.1] dark:[filter:invert(0)]"
         style={{
-          backgroundImage: "url(/manna-logo.png)",
+          backgroundImage: "url(/ag-logo.png)",
           backgroundRepeat: "repeat",
           backgroundSize: "80px 80px",
           maskImage:

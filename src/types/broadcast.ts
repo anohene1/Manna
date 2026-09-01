@@ -4,6 +4,8 @@ export interface VerseSegment {
 }
 
 export interface VerseRenderData {
+  /** Defaults to scripture for legacy payloads and saved history entries. */
+  contentType?: "scripture" | "song"
   reference: string
   segments: VerseSegment[]
 }
@@ -20,14 +22,27 @@ export interface RenderOptions {
   opacity?: number
   offsetX?: number
   offsetY?: number
-  scale?: number               // Scale factor for rendering at display size (e.g., 0.42 for 400px panel)
+  scale?: number // Scale factor for rendering at display size (e.g., 0.42 for 400px panel)
   imageCache?: Map<string, HTMLImageElement>
+  /** Preserve the pixels already on the canvas (used for camera lower thirds). */
+  skipBackground?: boolean
 }
 
 export type TextHorizontalAlign = "left" | "center" | "right" | "justify"
 export type TextVerticalAlign = "top" | "middle" | "bottom"
 export type TextTransform = "none" | "uppercase" | "lowercase" | "capitalize"
 export type TextDecoration = "none" | "underline" | "line-through"
+
+export interface BroadcastGradient {
+  type: "linear" | "radial"
+  angle: number
+  stops: { color: string; position: number }[]
+}
+
+export interface HtmlLowerThirdTemplate {
+  /** Complete, static HTML document or fragment. JavaScript is never executed. */
+  source: string
+}
 
 export interface BroadcastTheme {
   id: string
@@ -36,15 +51,15 @@ export interface BroadcastTheme {
   pinned: boolean
   createdAt: number
   updatedAt: number
+  /** Missing on legacy saved themes; callers must treat it as `slide`. */
+  kind?: "slide" | "lower-third"
+  /** When present, this static HTML/CSS replaces the canvas lower-third renderer. */
+  htmlTemplate?: HtmlLowerThirdTemplate | null
   resolution: { width: number; height: number }
   background: {
     type: "solid" | "gradient" | "image" | "transparent"
     color: string
-    gradient: {
-      type: "linear" | "radial"
-      angle: number
-      stops: { color: string; position: number }[]
-    } | null
+    gradient: BroadcastGradient | null
     image: {
       url: string
       fit: "cover" | "contain" | "stretch"
@@ -56,6 +71,8 @@ export interface BroadcastTheme {
   textBox: {
     enabled: boolean
     color: string
+    /** Optional gradient fill. Missing on legacy themes means a solid fill. */
+    gradient?: BroadcastGradient | null
     opacity: number
     borderRadius: number
     padding: number

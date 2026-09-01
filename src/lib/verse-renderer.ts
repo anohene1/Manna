@@ -1,4 +1,5 @@
 import type {
+  BroadcastGradient,
   BroadcastTheme,
   VerseRenderData,
   RenderOptions,
@@ -22,7 +23,7 @@ export interface VerseLayoutMetrics {
 export function wrapText(
   ctx: CanvasRenderingContext2D,
   text: string,
-  maxWidth: number,
+  maxWidth: number
 ): string[] {
   const out: string[] = []
 
@@ -52,7 +53,7 @@ export function wrapText(
 function alignX(
   textAlign: "left" | "center" | "right",
   rectX: number,
-  rectWidth: number,
+  rectWidth: number
 ): number {
   switch (textAlign) {
     case "left":
@@ -68,7 +69,7 @@ function alignY(
   verticalAlign: "top" | "middle" | "bottom",
   rectY: number,
   rectHeight: number,
-  contentHeight: number,
+  contentHeight: number
 ): number {
   switch (verticalAlign) {
     case "middle":
@@ -82,9 +83,12 @@ function alignY(
 }
 
 function resolveHorizontalAlign(
-  value: BroadcastTheme["verseText"]["horizontalAlign"] | BroadcastTheme["reference"]["horizontalAlign"] | undefined,
+  value:
+    | BroadcastTheme["verseText"]["horizontalAlign"]
+    | BroadcastTheme["reference"]["horizontalAlign"]
+    | undefined,
   fallback: BroadcastTheme["layout"]["textAlign"],
-  allowJustify: boolean,
+  allowJustify: boolean
 ): "left" | "center" | "right" | "justify" {
   if (!value) return fallback
   if (value === "justify" && !allowJustify) return fallback
@@ -92,24 +96,36 @@ function resolveHorizontalAlign(
 }
 
 function resolveVerticalAlign(
-  value: BroadcastTheme["verseText"]["verticalAlign"] | BroadcastTheme["reference"]["verticalAlign"] | undefined,
+  value:
+    | BroadcastTheme["verseText"]["verticalAlign"]
+    | BroadcastTheme["reference"]["verticalAlign"]
+    | undefined
 ): "top" | "middle" | "bottom" {
   return value ?? "top"
 }
 
 function resolveTextTransform(
-  value: BroadcastTheme["verseText"]["textTransform"] | BroadcastTheme["reference"]["textTransform"] | undefined,
+  value:
+    | BroadcastTheme["verseText"]["textTransform"]
+    | BroadcastTheme["reference"]["textTransform"]
+    | undefined
 ): "none" | "uppercase" | "lowercase" | "capitalize" {
   return value ?? "none"
 }
 
 function resolveTextDecoration(
-  value: BroadcastTheme["verseText"]["textDecoration"] | BroadcastTheme["reference"]["textDecoration"] | undefined,
+  value:
+    | BroadcastTheme["verseText"]["textDecoration"]
+    | BroadcastTheme["reference"]["textDecoration"]
+    | undefined
 ): "none" | "underline" | "line-through" {
   return value ?? "none"
 }
 
-function applyTextTransform(text: string, transform: "none" | "uppercase" | "lowercase" | "capitalize"): string {
+function applyTextTransform(
+  text: string,
+  transform: "none" | "uppercase" | "lowercase" | "capitalize"
+): string {
   switch (transform) {
     case "uppercase":
       return text.toUpperCase()
@@ -132,17 +148,19 @@ function drawTextDecorationLine(
   y: number,
   width: number,
   fontSize: number,
-  fallbackLeftX?: number,
+  fallbackLeftX?: number
 ): void {
   if (decoration === "none" || width <= 0) return
-  const startX = align === "left"
-    ? x
-    : align === "center"
-      ? x - width / 2
-      : align === "right"
-        ? x - width
-        : (fallbackLeftX ?? x)
-  const lineY = decoration === "underline" ? y + fontSize * 0.92 : y + fontSize * 0.52
+  const startX =
+    align === "left"
+      ? x
+      : align === "center"
+        ? x - width / 2
+        : align === "right"
+          ? x - width
+          : (fallbackLeftX ?? x)
+  const lineY =
+    decoration === "underline" ? y + fontSize * 0.92 : y + fontSize * 0.52
   ctx.save()
   ctx.strokeStyle = color
   ctx.lineWidth = Math.max(1, fontSize * 0.06)
@@ -160,7 +178,7 @@ function anchorPosition(
   canvasWidth: number,
   canvasHeight: number,
   offsetX: number,
-  offsetY: number,
+  offsetY: number
 ): { x: number; y: number } {
   let x: number
   let y: number
@@ -213,7 +231,7 @@ function roundRect(
   y: number,
   width: number,
   height: number,
-  radius: number,
+  radius: number
 ): void {
   ctx.beginPath()
   ctx.moveTo(x + radius, y)
@@ -231,7 +249,7 @@ function roundRect(
 function drawBackground(
   ctx: CanvasRenderingContext2D,
   theme: BroadcastTheme,
-  imageCache?: Map<string, HTMLImageElement>,
+  imageCache?: Map<string, HTMLImageElement>
 ): void {
   const { width, height } = theme.resolution
   const bg = theme.background
@@ -255,7 +273,7 @@ function drawBackground(
           cx - Math.cos(angle) * len,
           cy - Math.sin(angle) * len,
           cx + Math.cos(angle) * len,
-          cy + Math.sin(angle) * len,
+          cy + Math.sin(angle) * len
         )
       } else {
         grad = ctx.createRadialGradient(
@@ -264,7 +282,7 @@ function drawBackground(
           0,
           width / 2,
           height / 2,
-          Math.max(width, height) / 2,
+          Math.max(width, height) / 2
         )
       }
 
@@ -350,20 +368,51 @@ function drawBackground(
   }
 }
 
+function gradientForRect(
+  ctx: CanvasRenderingContext2D,
+  gradient: BroadcastGradient,
+  rect: VerseLayoutRect
+): CanvasGradient {
+  if (gradient.type === "radial") {
+    return ctx.createRadialGradient(
+      rect.x + rect.width / 2,
+      rect.y + rect.height / 2,
+      0,
+      rect.x + rect.width / 2,
+      rect.y + rect.height / 2,
+      Math.max(rect.width, rect.height) / 2
+    )
+  }
+  const angle = (gradient.angle * Math.PI) / 180
+  const cx = rect.x + rect.width / 2
+  const cy = rect.y + rect.height / 2
+  const len = Math.sqrt(rect.width ** 2 + rect.height ** 2) / 2
+  return ctx.createLinearGradient(
+    cx - Math.cos(angle) * len,
+    cy - Math.sin(angle) * len,
+    cx + Math.cos(angle) * len,
+    cy + Math.sin(angle) * len
+  )
+}
+
 function drawReference(
   ctx: CanvasRenderingContext2D,
   theme: BroadcastTheme,
   text: string,
   textRectX: number,
   textRectWidth: number,
-  y: number,
+  y: number
 ): number {
   const ref = theme.reference
   const transformed = applyTextTransform(
     ref.uppercase ? text.toUpperCase() : text,
-    resolveTextTransform(ref.textTransform),
+    resolveTextTransform(ref.textTransform)
   )
-  const refAlign = resolveHorizontalAlign(ref.horizontalAlign, theme.layout.textAlign, false)
+  const refAlign = resolveHorizontalAlign(
+    ref.horizontalAlign,
+    theme.layout.textAlign,
+    false
+  )
   const refDecoration = resolveTextDecoration(ref.textDecoration)
 
   ctx.save()
@@ -372,15 +421,32 @@ function drawReference(
   ctx.textBaseline = "top"
 
   if (ref.letterSpacing > 0) {
-    try { ctx.letterSpacing = `${ref.letterSpacing}px` } catch { /* unsupported in some WebViews */ }
+    try {
+      ctx.letterSpacing = `${ref.letterSpacing}px`
+    } catch {
+      /* unsupported in some WebViews */
+    }
   }
 
   const canvasAlign = refAlign === "justify" ? "left" : refAlign
   ctx.textAlign = canvasAlign
   const x = alignX(canvasAlign, textRectX, textRectWidth)
   ctx.fillText(transformed, x, y)
-  const drawnWidth = Math.min(textRectWidth, Math.max(1, ctx.measureText(transformed).width))
-  drawTextDecorationLine(ctx, refDecoration, ref.color, refAlign, x, y, drawnWidth, ref.fontSize, textRectX)
+  const drawnWidth = Math.min(
+    textRectWidth,
+    Math.max(1, ctx.measureText(transformed).width)
+  )
+  drawTextDecorationLine(
+    ctx,
+    refDecoration,
+    ref.color,
+    refAlign,
+    x,
+    y,
+    drawnWidth,
+    ref.fontSize,
+    textRectX
+  )
   ctx.restore()
 
   return ref.fontSize * 1.5
@@ -392,11 +458,15 @@ function drawVerseText(
   verse: VerseRenderData,
   textRectX: number,
   textRectWidth: number,
-  startY: number,
+  startY: number
 ): number {
   const vt = theme.verseText
   const vn = theme.verseNumbers
-  const verseAlign = resolveHorizontalAlign(vt.horizontalAlign, theme.layout.textAlign, true)
+  const verseAlign = resolveHorizontalAlign(
+    vt.horizontalAlign,
+    theme.layout.textAlign,
+    true
+  )
   const verseDecoration = resolveTextDecoration(vt.textDecoration)
   const lineHeightPx = vt.fontSize * vt.lineHeight
 
@@ -407,7 +477,11 @@ function drawVerseText(
   ctx.textAlign = verseAlign === "justify" ? "left" : verseAlign
 
   if (vt.letterSpacing > 0) {
-    try { ctx.letterSpacing = `${vt.letterSpacing}px` } catch { /* unsupported in some WebViews */ }
+    try {
+      ctx.letterSpacing = `${vt.letterSpacing}px`
+    } catch {
+      /* unsupported in some WebViews */
+    }
   }
 
   // Build full text with verse numbers inline
@@ -418,15 +492,24 @@ function drawVerseText(
     }
     fullText += segment.text + " "
   }
-  fullText = applyTextTransform(fullText.trim(), resolveTextTransform(vt.textTransform))
+  fullText = applyTextTransform(
+    fullText.trim(),
+    resolveTextTransform(vt.textTransform)
+  )
 
-  const useCenteredLines = (theme.verseText as Record<string, unknown>).lineBreakMode === "centered-lines"
+  const useCenteredLines =
+    (theme.verseText as Record<string, unknown>).lineBreakMode ===
+    "centered-lines"
   const wrappedLines = useCenteredLines
     ? breakIntoCenteredLines(fullText)
     : wrapText(ctx, fullText, textRectWidth)
 
   let currentY = startY
-  const effectiveAlign = useCenteredLines ? "center" as const : (verseAlign === "justify" ? "left" as const : verseAlign)
+  const effectiveAlign = useCenteredLines
+    ? ("center" as const)
+    : verseAlign === "justify"
+      ? ("left" as const)
+      : verseAlign
   const x = alignX(effectiveAlign, textRectX, textRectWidth)
 
   const drawStyledLine = (line: string, drawX: number, drawY: number) => {
@@ -454,11 +537,17 @@ function drawVerseText(
   }
 
   for (const [index, line] of wrappedLines.entries()) {
-    const isJustifiedLine = verseAlign === "justify" && index < wrappedLines.length - 1 && /\s+/.test(line)
+    const isJustifiedLine =
+      verseAlign === "justify" &&
+      index < wrappedLines.length - 1 &&
+      /\s+/.test(line)
     if (isJustifiedLine) {
       const words = line.trim().split(/\s+/).filter(Boolean)
       if (words.length > 1) {
-        const wordsWidth = words.reduce((sum, word) => sum + ctx.measureText(word).width, 0)
+        const wordsWidth = words.reduce(
+          (sum, word) => sum + ctx.measureText(word).width,
+          0
+        )
         const gap = (textRectWidth - wordsWidth) / (words.length - 1)
         let cursorX = textRectX
         for (const word of words) {
@@ -477,11 +566,14 @@ function drawVerseText(
         currentY,
         textRectWidth,
         vt.fontSize,
-        textRectX,
+        textRectX
       )
     } else {
       drawStyledLine(line, x, currentY)
-      const lineWidth = Math.min(textRectWidth, Math.max(1, ctx.measureText(line).width))
+      const lineWidth = Math.min(
+        textRectWidth,
+        Math.max(1, ctx.measureText(line).width)
+      )
       drawTextDecorationLine(
         ctx,
         verseDecoration,
@@ -491,7 +583,7 @@ function drawVerseText(
         currentY,
         lineWidth,
         vt.fontSize,
-        textRectX,
+        textRectX
       )
     }
     currentY += lineHeightPx
@@ -502,7 +594,10 @@ function drawVerseText(
   return currentY - startY
 }
 
-function buildScaledTheme(theme: BroadcastTheme, scale: number): BroadcastTheme {
+function buildScaledTheme(
+  theme: BroadcastTheme,
+  scale: number
+): BroadcastTheme {
   const layout = {
     ...theme.layout,
     offsetX: theme.layout.offsetX * scale,
@@ -517,7 +612,10 @@ function buildScaledTheme(theme: BroadcastTheme, scale: number): BroadcastTheme 
   return {
     ...theme,
     layout,
-    resolution: { width: theme.resolution.width * scale, height: theme.resolution.height * scale },
+    resolution: {
+      width: theme.resolution.width * scale,
+      height: theme.resolution.height * scale,
+    },
     verseText: {
       ...theme.verseText,
       fontSize: theme.verseText.fontSize * scale,
@@ -531,7 +629,10 @@ function buildScaledTheme(theme: BroadcastTheme, scale: number): BroadcastTheme 
           }
         : null,
       outline: theme.verseText.outline
-        ? { ...theme.verseText.outline, width: theme.verseText.outline.width * scale }
+        ? {
+            ...theme.verseText.outline,
+            width: theme.verseText.outline.width * scale,
+          }
         : null,
     },
     verseNumbers: {
@@ -555,30 +656,45 @@ function measureVerseHeight(
   ctx: CanvasRenderingContext2D,
   theme: BroadcastTheme,
   verse: VerseRenderData,
-  textRectWidth: number,
+  textRectWidth: number
 ): { height: number; maxLineWidth: number } {
   const vt = theme.verseText
   const vn = theme.verseNumbers
-  const verseAlign = resolveHorizontalAlign(vt.horizontalAlign, theme.layout.textAlign, true)
+  const verseAlign = resolveHorizontalAlign(
+    vt.horizontalAlign,
+    theme.layout.textAlign,
+    true
+  )
   const lineHeightPx = vt.fontSize * vt.lineHeight
   ctx.save()
   ctx.font = `${vt.fontWeight} ${vt.fontSize}px "${vt.fontFamily}", serif`
   if (vt.letterSpacing > 0) {
-    try { ctx.letterSpacing = `${vt.letterSpacing}px` } catch { /* unsupported in some WebViews */ }
+    try {
+      ctx.letterSpacing = `${vt.letterSpacing}px`
+    } catch {
+      /* unsupported in some WebViews */
+    }
   }
   let fullText = ""
   for (const segment of verse.segments) {
-    if (vn.visible && segment.verseNumber !== undefined) fullText += `${segment.verseNumber} `
+    if (vn.visible && segment.verseNumber !== undefined)
+      fullText += `${segment.verseNumber} `
     fullText += `${segment.text} `
   }
-  const transformed = applyTextTransform(fullText.trim(), resolveTextTransform(vt.textTransform))
-  const useCenteredLines = (theme.verseText as Record<string, unknown>).lineBreakMode === "centered-lines"
+  const transformed = applyTextTransform(
+    fullText.trim(),
+    resolveTextTransform(vt.textTransform)
+  )
+  const useCenteredLines =
+    (theme.verseText as Record<string, unknown>).lineBreakMode ===
+    "centered-lines"
   const lines = useCenteredLines
     ? breakIntoCenteredLines(transformed)
     : wrapText(ctx, transformed, textRectWidth)
   let maxLineWidth = 0
   for (const [index, line] of lines.entries()) {
-    const isJustifiedLine = verseAlign === "justify" && index < lines.length - 1 && /\s+/.test(line)
+    const isJustifiedLine =
+      verseAlign === "justify" && index < lines.length - 1 && /\s+/.test(line)
     const width = isJustifiedLine ? textRectWidth : ctx.measureText(line).width
     if (width > maxLineWidth) maxLineWidth = width
   }
@@ -595,12 +711,15 @@ function rectForAlignedText(
   drawY: number,
   width: number,
   height: number,
-  textRect: VerseLayoutRect,
+  textRect: VerseLayoutRect
 ): VerseLayoutRect {
   let x = drawX
   if (align === "center") x = drawX - width / 2
   if (align === "right") x = drawX - width
-  const clampedX = Math.max(textRect.x, Math.min(x, textRect.x + textRect.width - width))
+  const clampedX = Math.max(
+    textRect.x,
+    Math.min(x, textRect.x + textRect.width - width)
+  )
   const clampedY = Math.max(textRect.y, drawY)
   return {
     x: clampedX,
@@ -614,7 +733,7 @@ export function computeVerseLayoutMetrics(
   ctx: CanvasRenderingContext2D,
   theme: BroadcastTheme,
   verse: VerseRenderData | null,
-  options?: RenderOptions,
+  options?: RenderOptions
 ): VerseLayoutMetrics {
   const scale = options?.scale ?? 1
   const scaledTheme = buildScaledTheme(theme, scale)
@@ -625,7 +744,13 @@ export function computeVerseLayoutMetrics(
   const bgW = (layout.backgroundWidth / 100) * canvasW
   const bgH = (layout.backgroundHeight / 100) * canvasH
   const textAreaW = (layout.textAreaWidth / 100) * bgW
-  const textAreaH = (layout.textAreaHeight / 100) * bgH
+  const configuredTextAreaH = (layout.textAreaHeight / 100) * bgH
+  // Lower thirds auto-size to their content, but need a larger measuring area
+  // first so long verses can wrap and auto-fit before the final box is shrunk.
+  const textAreaH =
+    scaledTheme.kind === "lower-third"
+      ? Math.max(configuredTextAreaH, canvasH * 0.45)
+      : configuredTextAreaH
   const globalOffsetX = (options?.offsetX ?? 0) + layout.offsetX
   const globalOffsetY = (options?.offsetY ?? 0) + layout.offsetY
   const pos = anchorPosition(
@@ -635,19 +760,19 @@ export function computeVerseLayoutMetrics(
     canvasW,
     canvasH,
     globalOffsetX,
-    globalOffsetY,
+    globalOffsetY
   )
 
   const pad = layout.padding
-  let textRectX = pos.x + pad.left
+  const textRectX = pos.x + pad.left
   let textRectY = pos.y + pad.top
-  let textRectW = textAreaW - pad.left - pad.right
+  const textRectW = textAreaW - pad.left - pad.right
   let textRectH = textAreaH - pad.top - pad.bottom
 
   // Reserve space taken by the logo so verse/reference don't overlap it.
   // Mirror the reduction on the opposite side so a vertically-centered block
   // remains visually centered on the canvas.
-  if (scaledTheme.logo?.url) {
+  if (scaledTheme.logo?.url && scaledTheme.kind !== "lower-third") {
     const logo = scaledTheme.logo
     const logoH = logo.size * scale
     const logoMargin = logo.margin * scale
@@ -656,17 +781,36 @@ export function computeVerseLayoutMetrics(
       const shift = Math.max(0, reserve - pad.top)
       textRectY += shift
       textRectH = Math.max(0, textRectH - shift * 2)
-    } else if (logo.position === "bottom-left" || logo.position === "bottom-right") {
+    } else if (
+      logo.position === "bottom-left" ||
+      logo.position === "bottom-right"
+    ) {
       const shift = Math.max(0, reserve - pad.bottom)
       textRectH = Math.max(0, textRectH - shift * 2)
     }
   }
 
-  const textAreaRect: VerseLayoutRect = { x: pos.x, y: pos.y, width: textAreaW, height: textAreaH }
-  const textRect: VerseLayoutRect = { x: textRectX, y: textRectY, width: textRectW, height: textRectH }
+  const textAreaRect: VerseLayoutRect = {
+    x: pos.x,
+    y: pos.y,
+    width: textAreaW,
+    height: textAreaH,
+  }
+  const textRect: VerseLayoutRect = {
+    x: textRectX,
+    y: textRectY,
+    width: textRectW,
+    height: textRectH,
+  }
 
   if (!verse) {
-    return { scaledTheme, textAreaRect, textRect, referenceRect: null, verseRect: null }
+    return {
+      scaledTheme,
+      textAreaRect,
+      textRect,
+      referenceRect: null,
+      verseRect: null,
+    }
   }
 
   const referenceHeight = scaledTheme.reference.fontSize * 1.5
@@ -674,23 +818,25 @@ export function computeVerseLayoutMetrics(
   const verseAlign = resolveHorizontalAlign(
     scaledTheme.verseText.horizontalAlign,
     scaledTheme.layout.textAlign,
-    true,
+    true
   )
   const referenceAlign = resolveHorizontalAlign(
     scaledTheme.reference.horizontalAlign,
     scaledTheme.layout.textAlign,
-    false,
+    false
   )
   const blockVerticalAlign = resolveVerticalAlign(
     refStandalone
       ? scaledTheme.verseText.verticalAlign
       : scaledTheme.reference.position === "above"
-        ? (scaledTheme.reference.verticalAlign ?? scaledTheme.verseText.verticalAlign)
-        : (scaledTheme.verseText.verticalAlign ?? scaledTheme.reference.verticalAlign),
+        ? (scaledTheme.reference.verticalAlign ??
+          scaledTheme.verseText.verticalAlign)
+        : (scaledTheme.verseText.verticalAlign ??
+          scaledTheme.reference.verticalAlign)
   )
   const referenceGap = Math.max(
     0,
-    scaledTheme.layout.referenceGap ?? scaledTheme.reference.fontSize * 0.5,
+    scaledTheme.layout.referenceGap ?? scaledTheme.reference.fontSize * 0.5
   )
   if (scaledTheme.verseText.autoFit) {
     const minFs = Math.max(8, (scaledTheme.verseText.minFontSize ?? 24) * scale)
@@ -714,16 +860,29 @@ export function computeVerseLayoutMetrics(
   }
   const verseMetrics = measureVerseHeight(ctx, scaledTheme, verse, textRectW)
   const verseHeight = verseMetrics.height
-  const verseDrawX = alignX(verseAlign === "justify" ? "left" : verseAlign, textRectX, textRectW)
-  const referenceDrawX = alignX(referenceAlign === "justify" ? "left" : referenceAlign, textRectX, textRectW)
+  const verseDrawX = alignX(
+    verseAlign === "justify" ? "left" : verseAlign,
+    textRectX,
+    textRectW
+  )
+  const referenceDrawX = alignX(
+    referenceAlign === "justify" ? "left" : referenceAlign,
+    textRectX,
+    textRectW
+  )
 
   const refText = applyTextTransform(
-    scaledTheme.reference.uppercase ? verse.reference.toUpperCase() : verse.reference,
-    resolveTextTransform(scaledTheme.reference.textTransform),
+    scaledTheme.reference.uppercase
+      ? verse.reference.toUpperCase()
+      : verse.reference,
+    resolveTextTransform(scaledTheme.reference.textTransform)
   )
   ctx.save()
   ctx.font = `${scaledTheme.reference.fontWeight} ${scaledTheme.reference.fontSize}px "${scaledTheme.reference.fontFamily}", sans-serif`
-  const referenceWidth = Math.max(1, Math.min(textRectW, ctx.measureText(refText).width))
+  const referenceWidth = Math.max(
+    1,
+    Math.min(textRectW, ctx.measureText(refText).width)
+  )
   ctx.restore()
 
   const blockHeight = refStandalone
@@ -733,7 +892,32 @@ export function computeVerseLayoutMetrics(
       : scaledTheme.reference.position === "below"
         ? verseHeight + referenceGap + referenceHeight
         : verseHeight + referenceHeight
-  const blockStartY = alignY(blockVerticalAlign, textRectY, textRectH, blockHeight)
+
+  if (scaledTheme.kind === "lower-third") {
+    const desiredHeight = blockHeight + pad.top + pad.bottom
+    const fittedHeight = Math.min(textAreaH, desiredHeight)
+    const fittedPos = anchorPosition(
+      layout.anchor,
+      textAreaW,
+      fittedHeight,
+      canvasW,
+      canvasH,
+      globalOffsetX,
+      globalOffsetY
+    )
+    textAreaRect.x = fittedPos.x
+    textAreaRect.y = fittedPos.y
+    textAreaRect.height = fittedHeight
+    textRect.x = fittedPos.x + pad.left
+    textRect.y = fittedPos.y + pad.top
+    textRect.height = Math.max(0, fittedHeight - pad.top - pad.bottom)
+  }
+  const blockStartY = alignY(
+    blockVerticalAlign,
+    textRect.y,
+    textRect.height,
+    blockHeight
+  )
 
   let referenceRect: VerseLayoutRect
   let verseRect: VerseLayoutRect
@@ -745,7 +929,7 @@ export function computeVerseLayoutMetrics(
       verseY,
       verseMetrics.maxLineWidth,
       verseHeight,
-      textRect,
+      textRect
     )
     const standaloneMargin = refStandalone.margin * scale
     const refX = refStandalone.anchor.endsWith("right")
@@ -771,7 +955,7 @@ export function computeVerseLayoutMetrics(
       refY,
       referenceWidth,
       referenceHeight,
-      textRect,
+      textRect
     )
     verseRect = rectForAlignedText(
       verseAlign === "justify" ? "left" : verseAlign,
@@ -779,7 +963,7 @@ export function computeVerseLayoutMetrics(
       verseY,
       verseMetrics.maxLineWidth,
       verseHeight,
-      textRect,
+      textRect
     )
   } else if (scaledTheme.reference.position === "below") {
     const verseY = blockStartY
@@ -790,7 +974,7 @@ export function computeVerseLayoutMetrics(
       verseY,
       verseMetrics.maxLineWidth,
       verseHeight,
-      textRect,
+      textRect
     )
     referenceRect = rectForAlignedText(
       referenceAlign === "justify" ? "left" : referenceAlign,
@@ -798,7 +982,7 @@ export function computeVerseLayoutMetrics(
       refY,
       referenceWidth,
       referenceHeight,
-      textRect,
+      textRect
     )
   } else {
     const verseY = blockStartY
@@ -809,7 +993,7 @@ export function computeVerseLayoutMetrics(
       verseY,
       verseMetrics.maxLineWidth,
       verseHeight,
-      textRect,
+      textRect
     )
     referenceRect = rectForAlignedText(
       referenceAlign === "justify" ? "left" : referenceAlign,
@@ -817,7 +1001,7 @@ export function computeVerseLayoutMetrics(
       refY,
       referenceWidth,
       referenceHeight,
-      textRect,
+      textRect
     )
   }
 
@@ -852,10 +1036,17 @@ function breakIntoCenteredLines(text: string): string[] {
 
 function drawDivider(
   ctx: CanvasRenderingContext2D,
-  divider: { style: string; color: string; width: number; opacity: number; dotCount: number; dotSize: number },
+  divider: {
+    style: string
+    color: string
+    width: number
+    opacity: number
+    dotCount: number
+    dotSize: number
+  },
   centerX: number,
   y: number,
-  scale: number,
+  scale: number
 ): number {
   if (divider.style === "none") return 0
 
@@ -875,7 +1066,8 @@ function drawDivider(
     ctx.fillStyle = divider.color
     const dotSize = divider.dotSize * scale
     const dotGap = 6 * scale
-    const totalWidth = divider.dotCount * dotSize + (divider.dotCount - 1) * dotGap
+    const totalWidth =
+      divider.dotCount * dotSize + (divider.dotCount - 1) * dotGap
     let dotX = centerX - totalWidth / 2
     for (let i = 0; i < divider.dotCount; i++) {
       ctx.beginPath()
@@ -893,7 +1085,7 @@ export function renderVerse(
   ctx: CanvasRenderingContext2D,
   theme: BroadcastTheme,
   verse: VerseRenderData | null,
-  options?: RenderOptions,
+  options?: RenderOptions
 ): VerseLayoutMetrics | null {
   try {
     return renderVerseImpl(ctx, theme, verse, options)
@@ -907,7 +1099,7 @@ function renderVerseImpl(
   ctx: CanvasRenderingContext2D,
   theme: BroadcastTheme,
   verse: VerseRenderData | null,
-  options?: RenderOptions,
+  options?: RenderOptions
 ): VerseLayoutMetrics {
   const metrics = computeVerseLayoutMetrics(ctx, theme, verse, options)
   const scaledTheme = metrics.scaledTheme
@@ -919,21 +1111,36 @@ function renderVerseImpl(
     ctx.globalAlpha = options.opacity
   }
 
-  // Draw background
-  drawBackground(ctx, scaledTheme, options?.imageCache)
+  // Camera composition paints a moving frame first, then asks the verse
+  // renderer to add only the lower-third layers on top of those pixels.
+  if (!options?.skipBackground) {
+    drawBackground(ctx, scaledTheme, options?.imageCache)
+  }
 
   // Draw text box if enabled
-  if (scaledTheme.textBox.enabled) {
+  if (
+    scaledTheme.textBox.enabled &&
+    (verse !== null || scaledTheme.kind !== "lower-third")
+  ) {
     ctx.save()
     ctx.globalAlpha = (options?.opacity ?? 1) * scaledTheme.textBox.opacity
-    ctx.fillStyle = scaledTheme.textBox.color
+    const boxGradient = scaledTheme.textBox.gradient
+    if (boxGradient) {
+      const gradient = gradientForRect(ctx, boxGradient, metrics.textAreaRect)
+      for (const stop of boxGradient.stops) {
+        gradient.addColorStop(stop.position / 100, stop.color)
+      }
+      ctx.fillStyle = gradient
+    } else {
+      ctx.fillStyle = scaledTheme.textBox.color
+    }
     roundRect(
       ctx,
       metrics.textAreaRect.x,
       metrics.textAreaRect.y,
       metrics.textAreaRect.width,
       metrics.textAreaRect.height,
-      scaledTheme.textBox.borderRadius,
+      scaledTheme.textBox.borderRadius
     )
     ctx.fill()
     ctx.restore()
@@ -941,7 +1148,7 @@ function renderVerseImpl(
 
   // If no verse data, just draw the background and text box
   if (!verse) {
-    drawLogo(ctx, scaledTheme, options?.scale ?? 1, options?.imageCache)
+    drawThemeLogo(ctx, scaledTheme, options?.scale ?? 1, options?.imageCache)
     ctx.restore()
     return metrics
   }
@@ -950,9 +1157,23 @@ function renderVerseImpl(
   const verseRect = metrics.verseRect
   const scale = options?.scale ?? 1
   const divider = (scaledTheme as Record<string, unknown>).divider as
-    | { style: string; color: string; width: number; opacity: number; dotCount: number; dotSize: number }
+    | {
+        style: string
+        color: string
+        width: number
+        opacity: number
+        dotCount: number
+        dotSize: number
+      }
     | undefined
-  const resolvedDivider = divider ?? { style: "none" as const, color: "#fff", width: 0, opacity: 0, dotCount: 0, dotSize: 0 }
+  const resolvedDivider = divider ?? {
+    style: "none" as const,
+    color: "#fff",
+    width: 0,
+    opacity: 0,
+    dotCount: 0,
+    dotSize: 0,
+  }
 
   let dividerOffset = 0
   if (verseRect) {
@@ -962,12 +1183,18 @@ function renderVerseImpl(
       verse,
       metrics.textRect.x,
       metrics.textRect.width,
-      verseRect.y,
+      verseRect.y
     )
     if (referenceRect && resolvedDivider.style !== "none") {
       const dividerY = verseRect.y + verseH + 10 * scale
       const centerX = metrics.textRect.x + metrics.textRect.width / 2
-      dividerOffset = drawDivider(ctx, resolvedDivider, centerX, dividerY, scale)
+      dividerOffset = drawDivider(
+        ctx,
+        resolvedDivider,
+        centerX,
+        dividerY,
+        scale
+      )
     }
   }
   if (referenceRect) {
@@ -978,7 +1205,7 @@ function renderVerseImpl(
         verse.reference,
         referenceRect.x,
         referenceRect.width,
-        referenceRect.y,
+        referenceRect.y
       )
     } else {
       drawReference(
@@ -987,22 +1214,22 @@ function renderVerseImpl(
         verse.reference,
         metrics.textRect.x,
         metrics.textRect.width,
-        referenceRect.y + dividerOffset,
+        referenceRect.y + dividerOffset
       )
     }
   }
 
-  drawLogo(ctx, scaledTheme, scale, options?.imageCache)
+  drawThemeLogo(ctx, scaledTheme, scale, options?.imageCache)
 
   ctx.restore()
   return metrics
 }
 
-function drawLogo(
+export function drawThemeLogo(
   ctx: CanvasRenderingContext2D,
   theme: BroadcastTheme,
   scale: number,
-  imageCache?: Map<string, HTMLImageElement>,
+  imageCache?: Map<string, HTMLImageElement>
 ) {
   const logo = theme.logo
   if (!logo || !logo.url) return
@@ -1018,9 +1245,16 @@ function drawLogo(
 
   let x = margin
   let y = margin
-  if (logo.position === "top-right") { x = canvasW - w - margin; y = margin }
-  else if (logo.position === "bottom-left") { x = margin; y = canvasH - h - margin }
-  else if (logo.position === "bottom-right") { x = canvasW - w - margin; y = canvasH - h - margin }
+  if (logo.position === "top-right") {
+    x = canvasW - w - margin
+    y = margin
+  } else if (logo.position === "bottom-left") {
+    x = margin
+    y = canvasH - h - margin
+  } else if (logo.position === "bottom-right") {
+    x = canvasW - w - margin
+    y = canvasH - h - margin
+  }
 
   ctx.save()
   ctx.globalAlpha = (ctx.globalAlpha ?? 1) * logo.opacity

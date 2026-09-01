@@ -17,6 +17,22 @@ interface PreflightChecklistProps {
   onStart: () => void
 }
 
+/** Race a promise against a timeout so a hung permission prompt (e.g. a
+ * getUserMedia mic-access dialog that never surfaces) can't stall the
+ * checklist forever — falls back to `fallback` instead of hanging the UI. */
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), ms)
+    promise.then((v) => {
+      clearTimeout(timer)
+      resolve(v)
+    }).catch(() => {
+      clearTimeout(timer)
+      resolve(fallback)
+    })
+  })
+}
+
 interface CheckItem {
   label: string
   status: "checking" | "pass" | "fail" | "warning"
@@ -100,7 +116,11 @@ export function PreflightChecklist({ open, onOpenChange, onStart }: PreflightChe
       })
       setChecks([...results])
 
-      const soundResult = await probeAudioLevel()
+      const soundResult = await withTimeout(
+        probeAudioLevel(),
+        5000,
+        { status: "warning", detail: "Timed out waiting for microphone (permission prompt may be hidden). You can still start — check mic settings if audio is missing." },
+      )
       results[results.length - 1] = {
         label: "Sound Check",
         status: soundResult.status,

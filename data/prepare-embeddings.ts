@@ -111,7 +111,7 @@ async function detectGpu(venvPython: string): Promise<"mps" | "cuda" | "cpu"> {
 async function phaseVenv(_opts: Opts): Promise<void> {
   await ensurePythonEnv([
     "optimum-onnx[onnxruntime]",
-    "sentence-transformers",
+    "sentence-transformers==5.4.1",
     "accelerate",
     "tokenizers",
     "numpy",

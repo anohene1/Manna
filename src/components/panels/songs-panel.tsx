@@ -12,7 +12,7 @@ import { OnlineSearchResults } from "@/components/songs/online-search-results"
 import { SongDetailDrawer } from "@/components/songs/song-detail-drawer"
 import { SourceBadge } from "@/components/songs/source-badge"
 
-type Tab = "local" | "online" | "ewc"
+type Tab = "local" | "online"
 
 export function SongsPanel() {
   const allSongs = useSongStore((s) => s.songs)
@@ -32,22 +32,12 @@ export function SongsPanel() {
           s.source === "genius" ||
           s.source === "lrclib" ||
           s.source === "easyworship" ||
-          enabledHymnals.includes(s.source),
+          enabledHymnals.includes(s.source)
       ),
-    [allSongs, enabledHymnals],
+    [allSongs, enabledHymnals]
   )
 
-  // "EWC Live" is an artist — the EWC tab shows only songs by that author.
-  const ewcSongs = useMemo(
-    () => songs.filter((s) => (s.author ?? "").toLowerCase().includes("ewc live")),
-    [songs],
-  )
-
-  // Local tab searches all local songs; EWC tab searches within EWC-Live songs.
-  const filtered = useMemo(
-    () => searchSongs(tab === "ewc" ? ewcSongs : songs, query),
-    [songs, ewcSongs, query, tab],
-  )
+  const filtered = useMemo(() => searchSongs(songs, query), [songs, query])
 
   return (
     <div className="flex h-full flex-col">
@@ -55,7 +45,7 @@ export function SongsPanel() {
 
       <div className="flex items-center gap-2 border-b border-border/60 px-2 py-2">
         <div className="relative flex-1">
-          <SearchIcon className="absolute left-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" />
+          <SearchIcon className="absolute top-1/2 left-2 size-3 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -63,7 +53,12 @@ export function SongsPanel() {
             className="h-7 pl-7 text-xs"
           />
         </div>
-        <Button size="sm" variant="outline" onClick={() => setPasteOpen(true)} className="shrink-0 gap-1 text-xs">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setPasteOpen(true)}
+          className="shrink-0 gap-1 text-xs"
+        >
           <PlusIcon className="size-3" />
           New
         </Button>
@@ -73,7 +68,9 @@ export function SongsPanel() {
         <button
           className={cn(
             "rounded px-2 py-1 transition-colors",
-            tab === "local" ? "bg-muted font-semibold text-foreground" : "text-muted-foreground hover:bg-muted/50",
+            tab === "local"
+              ? "bg-muted font-semibold text-foreground"
+              : "text-muted-foreground hover:bg-muted/50"
           )}
           onClick={() => setTab("local")}
         >
@@ -82,20 +79,13 @@ export function SongsPanel() {
         <button
           className={cn(
             "rounded px-2 py-1 transition-colors",
-            tab === "online" ? "bg-muted font-semibold text-foreground" : "text-muted-foreground hover:bg-muted/50",
+            tab === "online"
+              ? "bg-muted font-semibold text-foreground"
+              : "text-muted-foreground hover:bg-muted/50"
           )}
           onClick={() => setTab("online")}
         >
           Search Online
-        </button>
-        <button
-          className={cn(
-            "rounded px-2 py-1 transition-colors",
-            tab === "ewc" ? "bg-muted font-semibold text-foreground" : "text-muted-foreground hover:bg-muted/50",
-          )}
-          onClick={() => setTab("ewc")}
-        >
-          EWC Live ({ewcSongs.length})
         </button>
       </div>
 
@@ -109,13 +99,10 @@ export function SongsPanel() {
             }}
           />
         ) : filtered.length === 0 ? (
-          tab === "ewc" ? (
-            <div className="px-4 py-12 text-center text-xs text-muted-foreground">
-              No EWC Live songs yet. Songs by the artist “EWC Live” appear here.
-            </div>
-          ) : (
-            <EmptyLocal onPaste={() => setPasteOpen(true)} onOnline={() => setTab("online")} />
-          )
+          <EmptyLocal
+            onPaste={() => setPasteOpen(true)}
+            onOnline={() => setTab("online")}
+          />
         ) : (
           <ul className="divide-y divide-border/40">
             {filtered.map((song) => (
@@ -154,21 +141,26 @@ function SongRow({
       <button onClick={onOpen} className="min-w-0 flex-1 text-left">
         <div className="flex items-baseline gap-2">
           {song.number !== null && (
-            <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
+            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
               {song.number}
             </span>
           )}
           <span className="truncate text-sm font-medium">{song.title}</span>
         </div>
         {song.author && (
-          <div className="truncate text-xs text-muted-foreground">{song.author}</div>
+          <div className="truncate text-xs text-muted-foreground">
+            {song.author}
+          </div>
         )}
       </button>
       <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
         <Button
           size="xs"
           variant="default"
-          onClick={(e) => { e.stopPropagation(); onJump() }}
+          onClick={(e) => {
+            e.stopPropagation()
+            onJump()
+          }}
           className="h-6 gap-1 px-2 text-[10px]"
           title="Broadcast immediately"
         >
@@ -178,7 +170,10 @@ function SongRow({
         <Button
           size="xs"
           variant="outline"
-          onClick={(e) => { e.stopPropagation(); onAdd() }}
+          onClick={(e) => {
+            e.stopPropagation()
+            onAdd()
+          }}
           className="h-6 gap-1 px-2 text-[10px]"
           title="Add to queue"
         >
@@ -190,11 +185,20 @@ function SongRow({
   )
 }
 
-function EmptyLocal({ onPaste, onOnline }: { onPaste: () => void; onOnline: () => void }) {
+function EmptyLocal({
+  onPaste,
+  onOnline,
+}: {
+  onPaste: () => void
+  onOnline: () => void
+}) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 p-8 text-center text-xs text-muted-foreground">
       <MusicIcon className="size-8 text-muted-foreground/40" />
-      <p>No matches. Try &quot;mhb 42&quot;, &quot;snk 150&quot;, or a hymn title.</p>
+      <p>
+        No matches. Try &quot;mhb 42&quot;, &quot;snk 150&quot;, or a hymn
+        title.
+      </p>
       <div className="flex gap-2">
         <Button size="sm" variant="outline" onClick={onOnline}>
           Search Online

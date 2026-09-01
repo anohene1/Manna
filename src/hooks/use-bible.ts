@@ -6,15 +6,35 @@ import type { SemanticSearchResult } from "@/types/detection"
 // Stable action functions that use getState() instead of closing over the store.
 // This prevents the infinite re-render loop caused by useCallback deps changing every render.
 
+async function invokeWhenBibleReady<T>(
+  command: string,
+  args?: Record<string, unknown>
+): Promise<T> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await invoke<T>(command, args)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (!message.includes("Bible database not loaded") || attempt >= 39) {
+        throw error
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250))
+    }
+  }
+}
+
 async function loadTranslations() {
-  const translations = await invoke<Translation[]>("list_translations")
+  const translations =
+    await invokeWhenBibleReady<Translation[]>("list_translations")
   useBibleStore.getState().setTranslations(translations)
   return translations
 }
 
 async function loadBooks(translationId?: number) {
   const id = translationId ?? useBibleStore.getState().activeTranslationId
-  const books = await invoke<Book[]>("list_books", { translationId: id })
+  const books = await invokeWhenBibleReady<Book[]>("list_books", {
+    translationId: id,
+  })
   useBibleStore.getState().setBooks(books)
   return books
 }
@@ -49,11 +69,7 @@ async function fetchVerse(
   })
 }
 
-async function searchVerses(
-  query: string,
-  limit = 20,
-  translationId?: number
-) {
+async function searchVerses(query: string, limit = 20, translationId?: number) {
   const id = translationId ?? useBibleStore.getState().activeTranslationId
   const results = await invoke<Verse[]>("search_verses", {
     query,

@@ -7,9 +7,9 @@ export type BrandAssetKind = "logo" | "blank" | "momo" | "jesus"
 
 /** Bundled fallback assets (served from `public/`). Used when no override is set. */
 export const BRAND_DEFAULTS: Record<BrandAssetKind, string> = {
-  logo: "/manna-logo.png",
-  blank: "/EWC-White.png",
-  momo: "/MOMO111.png",
+  logo: "/ag-logo.png",
+  blank: "/ag-bebu.png",
+  momo: "/momo.png",
   jesus: "/JESUSs.png",
 }
 

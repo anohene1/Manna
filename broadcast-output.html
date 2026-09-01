@@ -2,6 +2,10 @@
 <html lang="en" class="dark">
 <head>
   <meta charset="UTF-8" />
+  <!-- Empty data URI stops the browser auto-requesting /favicon.ico, which
+       404s and puts a red herring in the console. This window is borderless
+       and fullscreen, so it never shows an icon anyway. -->
+  <link rel="icon" href="data:," />
   <title>Rhema Broadcast</title>
   <style>body{margin:0;overflow:hidden;background:#000}</style>
 </head>

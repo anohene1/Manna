@@ -1,6 +1,25 @@
 import { invoke } from "@tauri-apps/api/core"
 import { listen } from "@tauri-apps/api/event"
 
+/** Race a promise against a timeout so a stuck IPC call (e.g. a command
+ * waiting on a busy backend lock) can't stall End Session forever. */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T | undefined> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      console.warn(`[recording] ${label} timed out after ${ms}ms`)
+      resolve(undefined)
+    }, ms)
+    promise.then((v) => {
+      clearTimeout(timer)
+      resolve(v)
+    }).catch((e) => {
+      clearTimeout(timer)
+      console.warn(`[recording] ${label} failed`, e)
+      resolve(undefined)
+    })
+  })
+}
+
 /**
  * Stop transcription and concatenate the session's audio segments into the
  * final `audio.mp3`.
@@ -30,9 +49,9 @@ export async function finalizeRecording(sessionId: number): Promise<void> {
       })
     })
 
-    await invoke("stop_transcription").catch(() => {})
+    await withTimeout(invoke("stop_transcription"), 3000, "stop_transcription")
     await finalized
-    await invoke("finalize_session_audio", { sessionId })
+    await withTimeout(invoke("finalize_session_audio", { sessionId }), 5000, "finalize_session_audio")
   } catch (e) {
     console.warn("[recording] finalize failed", e)
   }

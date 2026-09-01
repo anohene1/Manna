@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useRef } from "react"
+import { toast } from "sonner"
 import { useBroadcastStore } from "@/stores"
 import { CanvasVerse } from "@/components/ui/canvas-verse"
 import { Input } from "@/components/ui/input"
@@ -17,7 +18,7 @@ import {
 import { cn } from "@/lib/utils"
 import type { BroadcastTheme, VerseRenderData } from "@/types"
 
-type FilterTab = "all" | "pinned" | "custom"
+type FilterTab = "all" | "lower-thirds" | "pinned" | "custom"
 
 const THUMBNAIL_VERSE: VerseRenderData = {
   reference: "John 3:16 (KJV)",
@@ -82,6 +83,11 @@ function ThemeCard({
               Built-in
             </Badge>
           )}
+          {theme.kind === "lower-third" && (
+            <Badge variant="outline" className="text-[0.5rem]">
+              {theme.htmlTemplate ? "HTML" : "Lower third"}
+            </Badge>
+          )}
         </div>
 
         {/* More menu */}
@@ -103,9 +109,11 @@ function ThemeCard({
 export function ThemeLibrary() {
   const themes = useBroadcastStore((s) => s.themes)
   const activeThemeId = useBroadcastStore((s) => s.activeThemeId)
+  const lowerThirdThemeId = useBroadcastStore((s) => s.lowerThirdThemeId)
   const editingThemeId = useBroadcastStore((s) => s.editingThemeId)
   const [search, setSearch] = useState("")
   const [filter, setFilter] = useState<FilterTab>("all")
+  const importInputRef = useRef<HTMLInputElement>(null)
 
   const filteredThemes = useMemo(() => {
     let result = themes
@@ -115,6 +123,9 @@ export function ThemeLibrary() {
     }
     if (filter === "pinned") result = result.filter((t) => t.pinned)
     if (filter === "custom") result = result.filter((t) => !t.builtin)
+    if (filter === "lower-thirds") {
+      result = result.filter((t) => t.kind === "lower-third")
+    }
     return result
   }, [themes, search, filter])
 
@@ -126,6 +137,79 @@ export function ThemeLibrary() {
     if (firstTheme) {
       useBroadcastStore.getState().duplicateTheme(firstTheme.id)
     }
+  }
+
+  const handleImport = async (file: File | undefined) => {
+    if (!file) return
+    try {
+      const source = await file.text()
+      const isHtml = /\.html?$/i.test(file.name)
+      let importedThemes: BroadcastTheme[]
+      if (isHtml) {
+        const base = themes.find((theme) => theme.kind === "lower-third")
+        if (!base) throw new Error("No lower-third base theme is available.")
+        importedThemes = [
+          {
+            ...base,
+            id: crypto.randomUUID(),
+            name: file.name.replace(/\.html?$/i, "") || "HTML Lower Third",
+            builtin: false,
+            pinned: false,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            kind: "lower-third",
+            htmlTemplate: { source },
+          },
+        ]
+      } else {
+        const parsed = JSON.parse(source) as
+          Partial<BroadcastTheme> | Partial<BroadcastTheme>[]
+        const candidates = Array.isArray(parsed) ? parsed : [parsed]
+        if (candidates.length === 0) throw new Error("The theme file is empty.")
+        importedThemes = candidates.map((candidate) => {
+          if (!candidate.name || !candidate.resolution || !candidate.layout) {
+            throw new Error("This JSON file is not a Manna broadcast theme.")
+          }
+          return {
+            ...(candidate as BroadcastTheme),
+            id: crypto.randomUUID(),
+            builtin: false,
+            pinned: false,
+            kind: candidate.kind ?? "slide",
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          }
+        })
+      }
+      for (const theme of importedThemes) {
+        useBroadcastStore.getState().saveTheme(theme)
+      }
+      const imported = importedThemes[0]
+      useBroadcastStore.getState().startEditing(imported.id)
+      setFilter("custom")
+      toast.success(
+        importedThemes.length === 1
+          ? `Imported “${imported.name}”`
+          : `Imported ${importedThemes.length} themes`
+      )
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Import failed.")
+    } finally {
+      if (importInputRef.current) importInputRef.current.value = ""
+    }
+  }
+
+  const handleExportAll = () => {
+    const customThemes = themes.filter((theme) => !theme.builtin)
+    const blob = new Blob([JSON.stringify(customThemes, null, 2)], {
+      type: "application/json",
+    })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = "manna-custom-themes.json"
+    link.click()
+    URL.revokeObjectURL(url)
   }
 
   return (
@@ -159,19 +243,44 @@ export function ThemeLibrary() {
         className="shrink-0 px-3 pb-4"
       >
         <TabsList className="h-7 w-full">
-          <TabsTrigger value="all" className="capitalize">all</TabsTrigger>
-          <TabsTrigger value="pinned" className="capitalize">pinned</TabsTrigger>
-          <TabsTrigger value="custom" className="capitalize">custom</TabsTrigger>
+          <TabsTrigger value="all" className="capitalize">
+            all
+          </TabsTrigger>
+          <TabsTrigger value="lower-thirds" className="capitalize">
+            lower thirds
+          </TabsTrigger>
+          <TabsTrigger value="pinned" className="capitalize">
+            pinned
+          </TabsTrigger>
+          <TabsTrigger value="custom" className="capitalize">
+            custom
+          </TabsTrigger>
         </TabsList>
       </Tabs>
 
       {/* Import / Export */}
       <div className="flex gap-1.5 px-3 pb-3">
-        <Button variant="outline" className="flex-1 border-border bg-transparent">
+        <input
+          ref={importInputRef}
+          type="file"
+          accept=".html,.htm,.json,text/html,application/json"
+          className="hidden"
+          onChange={(event) => void handleImport(event.target.files?.[0])}
+        />
+        <Button
+          variant="outline"
+          className="flex-1 border-border bg-transparent"
+          onClick={() => importInputRef.current?.click()}
+        >
           <UploadIcon className="size-2.5" />
           Import
         </Button>
-        <Button variant="outline" className="flex-1 border-border bg-transparent">
+        <Button
+          variant="outline"
+          className="flex-1 border-border bg-transparent"
+          onClick={handleExportAll}
+          disabled={!themes.some((theme) => !theme.builtin)}
+        >
           <DownloadIcon className="size-2.5" />
           Export All
         </Button>
@@ -190,7 +299,12 @@ export function ThemeLibrary() {
                 <ThemeCard
                   key={theme.id}
                   theme={theme}
-                  isActive={theme.id === activeThemeId}
+                  isActive={
+                    theme.id ===
+                    (theme.kind === "lower-third"
+                      ? lowerThirdThemeId
+                      : activeThemeId)
+                  }
                   isEditing={theme.id === editingThemeId}
                   onSelect={() =>
                     useBroadcastStore.getState().startEditing(theme.id)
@@ -210,7 +324,12 @@ export function ThemeLibrary() {
                 <ThemeCard
                   key={theme.id}
                   theme={theme}
-                  isActive={theme.id === activeThemeId}
+                  isActive={
+                    theme.id ===
+                    (theme.kind === "lower-third"
+                      ? lowerThirdThemeId
+                      : activeThemeId)
+                  }
                   isEditing={theme.id === editingThemeId}
                   onSelect={() =>
                     useBroadcastStore.getState().startEditing(theme.id)
